@@ -1,0 +1,55 @@
+.localizaciones-page{
+    padding:35px;
+}
+
+.localizaciones-header h1{
+    font-size:42px;
+    color:#bdcae9;
+    margin-bottom:10px;
+}
+
+.localizaciones-header p{
+    color: #0f172a;
+    margin-bottom:30px;
+}
+
+.tree-card{
+    background:white;
+    border-radius:20px;
+    padding:30px;
+    box-shadow:0 5px 15px rgba(89, 167, 219, 0.08);
+}
+
+.tree-title{
+    font-size:20px;
+    font-weight:700;
+    margin-bottom:25px;
+    color:#1e293b;
+}
+
+.tree{
+    list-style:none;
+}
+
+.tree ul{
+    list-style:none;
+    margin-left:30px;
+    margin-top:10px;
+}
+
+.tree li{
+    padding:10px 0;
+    color:#334155;
+    font-size:16px;
+}
+
+.planta{
+    font-size:18px;
+    font-weight:700;
+    color:#2563eb;
+}
+
+.tree li:hover{
+    color:#2563eb;
+    cursor:pointer;
+}

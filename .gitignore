@@ -1,0 +1,10 @@
+.env
+**/node_modules/
+**/dist/
+backend/uploads/
+npm-debug.log*
+tmp/
+outputs/
+backend/tmp-srequest.xls
+*.xls
+*.xlsx
