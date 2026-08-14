@@ -8,3 +8,5 @@ outputs/
 backend/tmp-srequest.xls
 *.xls
 *.xlsx
+.tmp_presentation/
+*.pptx.inspect.ndjson

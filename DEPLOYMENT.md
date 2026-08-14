@@ -1,52 +1,44 @@
-# Publicar INCAMAT en Internet
+# Instalación interna de INCAMAT
 
-Esta guía permite ejecutar INCAMAT en un servidor, sin depender de Docker Desktop ni de la laptop de desarrollo.
+Este procedimiento es para el equipo TIC de Incalpaca. INCAMAT no debe publicarse desde una laptop, túnel temporal o cuenta personal.
 
-## 1. Requisitos del servidor
+## Alcance
 
-- Servidor Linux (Ubuntu LTS recomendado), con Docker Engine y Docker Compose.
-- Un dominio o subdominio, por ejemplo `incamat.tuempresa.com`.
-- Acceso SSH para el responsable de TI.
+- Servidor interno administrado por TIC, con Docker Engine y Docker Compose.
+- Nombre interno definido por TIC, por ejemplo `http://incamat.incalpaca.local`.
+- MariaDB no se expone a la red; únicamente se comunica con el backend en la red privada de Docker.
+- El puerto 80 debe quedar disponible solo desde las redes y perfiles autorizados por TIC.
 
-## 2. Preparar el proyecto
+## Preparación segura
 
-1. Copiar el repositorio al servidor.
-2. Copiar `.env.production.example` a `.env`.
-3. Reemplazar todas las claves de ejemplo por contraseñas largas y únicas.
-4. Definir `CORS_ORIGIN` con la dirección HTTPS definitiva.
+1. Copiar el código fuente aprobado a un repositorio corporativo o al servidor administrado por TIC.
+2. Copiar `.env.production.example` como `.env` en el servidor. Ese archivo no se entrega ni se sube a ningún repositorio.
+3. Definir claves únicas de al menos 12 caracteres para MariaDB y un `AUTH_SECRET` de 32 caracteres o más.
+4. Definir `CORS_ORIGIN` y `PUBLIC_APP_URL` con el nombre interno definitivo. Los QR generados después de esto dirigirán a ese nombre.
+5. Definir `INITIAL_ADMIN_*` una sola vez para la instalación vacía. Tras crear al administrador, TIC debe retirar `INITIAL_ADMIN_PASSWORD` del archivo de entorno.
 
-## 3. Iniciar la aplicación
+## Inicio
 
 ```bash
 docker compose -f docker-compose.production.yml up -d --build
+docker compose -f docker-compose.production.yml ps
 ```
 
-La aplicación se expone solo por el puerto 80. MariaDB queda en la red interna de Docker y no se publica a Internet.
+TIC debe verificar inicio de sesión, permisos por rol, importación, evidencia fotográfica, QR y restauración antes de publicar. La constancia se registra en el acta de verificación correspondiente.
 
-## 4. Migrar los datos actuales
+## Migración de datos
 
-En la computadora actual, generar un respaldo de la base de datos:
+El respaldo y la restauración los ejecuta TIC desde un terminal seguro; no se incluyen contraseñas en los comandos ni documentación pública. Además de la base MariaDB deben trasladarse las evidencias almacenadas en el volumen `uploads_data`.
 
-```powershell
-docker exec incamant-db mariadb-dump -ualyson -palyson123 incamant > incamant_respaldo.sql
-```
+## Respaldo y continuidad
 
-Copiar ese archivo al servidor y restaurarlo antes de usar INCAMAT en producción:
+- Programar respaldo diario de MariaDB y del volumen de evidencias hacia una ubicación corporativa separada.
+- Restringir lectura del respaldo a TIC autorizado.
+- Conservar la periodicidad definida por TIC y probar una restauración al menos una vez al año.
+- Documentar cada prueba de restauración y cualquier cambio de acceso.
 
-```bash
-docker compose -f docker-compose.production.yml exec -T mariadb mariadb -uincamant_app -p incamant < incamant_respaldo.sql
-```
+## No autorizado para producción
 
-También se deben copiar las evidencias fotográficas desde `backend/uploads` al volumen `uploads_data` del servidor.
-
-## 5. HTTPS y dominio
-
-Un responsable de TI debe apuntar el DNS del dominio al servidor y colocar un proxy HTTPS (Nginx Proxy Manager, Caddy o Nginx con Certbot) delante de INCAMAT. No uses el sistema por Internet hasta habilitar HTTPS.
-
-## 6. Respaldo periódico
-
-Configurar una tarea diaria en el servidor para exportar MariaDB y guardar el archivo fuera del servidor. Probar periódicamente la restauración.
-
-## Importante
-
-Esta configuración quita la dependencia de la laptop, pero el servidor y sus respaldos pasan a ser responsabilidad de TI. Antes de acceso externo real debe reforzarse el inicio de sesión: contraseñas cifradas, sesiones autenticadas y permisos validados también por el backend.
+- Cloudflare Tunnel, enlaces `trycloudflare.com`, GitHub personal, Google Cloud personal o la laptop de la pasante.
+- Contraseñas en archivos, chats, capturas o repositorios.
+- Acceso a MariaDB por un puerto público o desde Internet.

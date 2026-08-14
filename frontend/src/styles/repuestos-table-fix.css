@@ -1,0 +1,11 @@
+/* La tabla conserva todas sus columnas y habilita desplazamiento horizontal.
+   Así Estado nunca queda fuera de la vista ni se comprime el contenido. */
+.spare-table {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+}
+
+.spare-table table {
+  min-width: 1180px;
+}

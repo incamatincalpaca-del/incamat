@@ -6,6 +6,7 @@ import StatusPill from "../components/StatusPill";
 import { useIncaMant } from "../data/incamatData";
 import { canManageAssets } from "../data/roles";
 import "../styles/repuestos-pro.css";
+import "../styles/repuestos-table-fix.css";
 import "../styles/movimientos-almacen.css";
 import "../styles/clasificacion-repuestos.css";
 

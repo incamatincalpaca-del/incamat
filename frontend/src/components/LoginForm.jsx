@@ -35,6 +35,7 @@ function LoginForm() {
       if (respuesta.ok && datos.success) {
         localStorage.setItem("usuario", JSON.stringify(datos.usuario));
         localStorage.setItem("authToken", datos.token);
+        window.dispatchEvent(new Event("incamat:login"));
         navigate(datos.usuario.rol === "Operario" ? "/reportes-planta" : "/dashboard", { replace: true });
       } else {
         alert(

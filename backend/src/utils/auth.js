@@ -23,8 +23,13 @@ function authenticate(req, res, next) {
   } catch (_error) { return res.status(401).json({ error: "Sesión no válida." }); }
 }
 
+function optionalAuthenticate(req, res, next) {
+  if (!req.headers.authorization) return next();
+  return authenticate(req, res, next);
+}
+
 function requireRole(...roles) {
   return (req, res, next) => roles.includes(req.user?.rol) ? next() : res.status(403).json({ error: "No tienes permiso para esta acción." });
 }
 
-module.exports = { createToken, authenticate, requireRole };
+module.exports = { createToken, authenticate, optionalAuthenticate, requireRole };

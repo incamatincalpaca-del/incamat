@@ -20,6 +20,35 @@ router.get("/historial-exportable", async (_req, res) => {
   finally { if (conn) conn.release(); }
 });
 
+// Consulta didáctica del historial importado: no crea órdenes ni altera estados.
+router.get("/historial-excel", async (req, res) => {
+  const filters = {
+    correctivo: "UPPER(TRIM(h.tipo_original)) = 'CORRECTIVO'",
+    preventivo: "UPPER(TRIM(h.tipo_original)) IN ('PREVENTIVO','PREV GENERAL','PREVENTIVO MEC')",
+    rutinario: "UPPER(TRIM(h.tipo_original)) = 'RUTINARIO'",
+    limpieza: "UPPER(TRIM(h.tipo_original)) = 'LIMPIEZA'",
+    proyecto: "UPPER(TRIM(h.tipo_original)) = 'PROYECTO'",
+    mejora: "UPPER(TRIM(h.tipo_original)) = 'MEJORA'",
+    seguridad: "UPPER(TRIM(h.tipo_original)) = 'SEGURIDAD'",
+    apoyo: "UPPER(TRIM(h.tipo_original)) = 'APOYO'",
+    otros: "UPPER(TRIM(h.tipo_original)) NOT IN ('CORRECTIVO','PREVENTIVO','PREV GENERAL','PREVENTIVO MEC','RUTINARIO','LIMPIEZA','PROYECTO','MEJORA','SEGURIDAD','APOYO')"
+  };
+  const type = String(req.query.tipo || "").toLowerCase();
+  if (!filters[type]) return res.status(400).json({ error: "Tipo de historial no válido." });
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const where = filters[type];
+    const [countRows, statusRows, rows] = await Promise.all([
+      conn.query(`SELECT COUNT(*) AS total FROM historial_mantenimiento_excel h WHERE ${where}`),
+      conn.query(`SELECT COALESCE(m.estado, 'Sin vincular') AS estado, COUNT(*) AS total FROM historial_mantenimiento_excel h LEFT JOIN maquinas m ON m.id=h.id_maquina WHERE ${where} GROUP BY COALESCE(m.estado, 'Sin vincular')`),
+      conn.query(`SELECT h.id_registro,h.fecha,h.maquina_origen,h.tipo_original,h.tecnicos,h.ot,h.detalles,h.repuestos_materiales, COALESCE(m.nombre,h.maquina_origen) AS maquina, COALESCE(a.nombre,'Sin área vinculada') AS area, COALESCE(m.estado,'Sin vincular') AS estado_maquina FROM historial_mantenimiento_excel h LEFT JOIN maquinas m ON m.id=h.id_maquina LEFT JOIN areas a ON a.id=m.id_area WHERE ${where} ORDER BY h.fecha DESC, h.id DESC LIMIT 60`)
+    ]);
+    res.json({ total: Number(countRows[0]?.total || 0), estados: statusRows.map((row) => ({ estado: row.estado, total: Number(row.total || 0) })), registros: rows });
+  } catch (error) { console.error(error); res.status(500).json({ error: "No fue posible consultar el historial importado." }); }
+  finally { if (conn) conn.release(); }
+});
+
 router.get("/", async (_req, res) => {
   let conn;
   try { conn = await pool.getConnection(); const rows = await conn.query(`SELECT mt.*,m.nombre AS maquina,a.nombre AS area,f.estado AS estado_falla FROM mantenimientos mt JOIN maquinas m ON m.id=mt.id_maquina JOIN areas a ON a.id=m.id_area LEFT JOIN fallas f ON f.id=mt.id_falla ORDER BY FIELD(mt.estado,'En proceso','Programado','Completado','Cancelado'),mt.fecha_programada ASC`); res.json(rows); }

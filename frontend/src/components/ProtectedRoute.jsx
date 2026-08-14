@@ -2,7 +2,10 @@ import { Navigate, Outlet } from "react-router-dom";
 
 function ProtectedRoute({ roles }) {
   const savedUser = localStorage.getItem("usuario");
-  if (!savedUser) return <Navigate to="/" replace />;
+  if (!savedUser) {
+    localStorage.removeItem("usuario");
+    return <Navigate to="/" replace />;
+  }
 
   try {
     const user = JSON.parse(savedUser);
@@ -11,7 +14,6 @@ function ProtectedRoute({ roles }) {
     }
   } catch {
     localStorage.removeItem("usuario");
-    localStorage.removeItem("authToken");
     return <Navigate to="/" replace />;
   }
 

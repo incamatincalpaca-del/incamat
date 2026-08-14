@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import DashboardLayout from "../layouts/DashboardLayout";
 import PageHeader from "../components/PageHeader";
 import { useIncaMant } from "../data/incamatData";
@@ -7,6 +8,7 @@ import "../styles/operaciones.css";
 import "../styles/srequest-areas.css";
 import "../styles/maintenance-types.css";
 import "../styles/maintenance-board-controls.css";
+import "../styles/historial-mantenimiento-detalle.css";
 
 const API = import.meta.env.VITE_API_URL || "/api";
 const today = new Date().toISOString().slice(0, 10);
@@ -29,9 +31,13 @@ function Elapsed({ started }) {
 function Mantenimientos() {
   const canPlan = canManagePlanning();
   const { machines, components, areas } = useIncaMant();
+  const [searchParams] = useSearchParams();
+  const historyType = searchParams.get("historial");
   const [plans, setPlans] = useState([]);
   const [orders, setOrders] = useState([]);
   const [srequests, setSrequests] = useState([]);
+  const [historySummary, setHistorySummary] = useState({});
+  const [historyDetail, setHistoryDetail] = useState(null);
   const [tab, setTab] = useState("nuevas");
   const [areaFilter, setAreaFilter] = useState("Todas");
   const [srequestOrder, setSrequestOrder] = useState("fecha");
@@ -50,11 +56,20 @@ function Mantenimientos() {
   const [planForm, setPlanForm] = useState({ id_maquina: "", tipo: "Preventivo", modalidad: "Planificado", fecha_programada: "", responsable: "", tareas: "" });
 
   const load = async () => {
-    const [plansResponse, ordersResponse, srequestResponse] = await Promise.all([fetch(`${API}/mantenimientos`), fetch(`${API}/fallas/pendientes`), fetch(`${API}/solicitudes-externas`)]);
-    if (!plansResponse.ok || !ordersResponse.ok || !srequestResponse.ok) throw Error("No se pudieron cargar las órdenes.");
-    setPlans(await plansResponse.json()); setOrders(await ordersResponse.json()); setSrequests(await srequestResponse.json());
+    const [plansResponse, ordersResponse, srequestResponse, dashboardResponse] = await Promise.all([fetch(`${API}/mantenimientos`), fetch(`${API}/fallas/pendientes`), fetch(`${API}/solicitudes-externas`), fetch(`${API}/dashboard?periodo=todo`)]);
+    if (!plansResponse.ok || !ordersResponse.ok || !srequestResponse.ok || !dashboardResponse.ok) throw Error("No se pudieron cargar las órdenes.");
+    const [planData, orderData, requestData, dashboardData] = await Promise.all([plansResponse.json(), ordersResponse.json(), srequestResponse.json(), dashboardResponse.json()]);
+    setPlans(planData); setOrders(orderData); setSrequests(requestData); setHistorySummary(dashboardData.resumen_mantenimiento || {});
   };
   useEffect(() => { load().catch((e) => setError(e.message)); }, []);
+  useEffect(() => {
+    if (!historyType) { setHistoryDetail(null); return; }
+    setHistoryDetail(null);
+    fetch(`${API}/mantenimientos/historial-excel?tipo=${encodeURIComponent(historyType)}`)
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("No fue posible cargar el detalle histórico.")))
+      .then(setHistoryDetail)
+      .catch((requestError) => setError(requestError.message));
+  }, [historyType]);
   const matchesArea = (item) => areaFilter === "Todas" || item.area === areaFilter || item.empresa_origen === areaFilter;
   const visiblePlans = plans.filter(matchesArea);
   const visibleOrders = orders.filter(matchesArea);
@@ -74,9 +89,12 @@ function Mantenimientos() {
     autonomo: visiblePlans.filter((item) => item.tipo === "Preventivo" && item.modalidad === "Autónomo" && !["Completado", "Cancelado"].includes(item.estado)),
     predictivo: visiblePlans.filter((item) => item.tipo === "Predictivo" && !["Completado", "Cancelado"].includes(item.estado)),
     proactivo: visiblePlans.filter((item) => item.tipo === "Proactivo" && !["Completado", "Cancelado"].includes(item.estado)),
-    preventivos: [...overdue, ...todayTasks], completadas: done
+    preventivos: [...overdue, ...todayTasks], completadas: done,
+    historial: Object.entries(historySummary).filter(([, total]) => Number(total) > 0).map(([tipo, total]) => ({ tipo, prioridad: "Media", estado: "Historial importado", maquina: tipo.charAt(0).toUpperCase() + tipo.slice(1), area: "Registro histórico", descripcion: `${Number(total)} actividades cargadas desde Excel` }))
   };
-  const labels = { nuevas: "Correctivos nuevos", atencion: "En atención", espera: "Esperando repuesto", validacion: "Pendiente de validación", planificado: "Preventivo planificado", autonomo: "Autónomo · checklist", predictivo: "Predictivo", proactivo: "Proactivo", preventivos: "Agenda de hoy", completadas: "Tareas completadas" };
+  const labels = { nuevas: "Correctivos nuevos", atencion: "En atención", espera: "Esperando repuesto", validacion: "Pendiente de validación", planificado: "Preventivo planificado", autonomo: "Autónomo · checklist", predictivo: "Predictivo", proactivo: "Proactivo", preventivos: "Agenda de hoy", completadas: "Tareas completadas", historial: "Historial Excel" };
+  const historyTotal = Object.values(historySummary).reduce((total, item) => total + Number(item || 0), 0);
+  const historyTypeLabels = { correctivo: "Correctivo", preventivo: "Preventivo", rutinario: "Rutinario", limpieza: "Limpieza", proyecto: "Proyecto", mejora: "Mejora", seguridad: "Seguridad", apoyo: "Apoyo", otros: "Otros" };
   const exportCsv = () => {
     const rows = [["Tipo", "Máquina", "Área", "Estado", "Prioridad", "Fecha reporte", "Inicio real", "Fin real", "Responsable", "Diagnóstico", "Trabajo realizado", "Repuestos usados"],
       ...orders.map((item) => ["Incidencia", item.maquina, item.area, item.estado, labelPriority(item.prioridad), item.fecha_ocurrencia, item.fecha_atencion || "", item.fecha_resolucion || "", item.atendido_por || "", item.diagnostico || "", item.trabajo_realizado || "", ""]),
@@ -147,10 +165,11 @@ function Mantenimientos() {
 
   return <DashboardLayout>
     <PageHeader eyebrow="CENTRO OPERATIVO" title="Mantenimientos" description="Bandeja de trabajo para incidencias QR, preventivos y seguimiento técnico." action={<><button className="button button-secondary" onClick={exportCsv}>Descargar CSV</button>{canPlan && <button className="button button-primary" onClick={() => setProgramming(true)}>+ Programar preventivo</button>}</>} />
+    {historyType && <section className="history-detail-panel"><header><div><p className="eyebrow">DETALLE DEL HISTORIAL IMPORTADO</p><h2>{historyType.charAt(0).toUpperCase() + historyType.slice(1)}</h2><p>Consulta qué máquinas tienen registros históricos y confirma su estado actual en planta.</p></div><strong>{historyDetail ? `${historyDetail.total} registros` : "Cargando..."}</strong></header>{historyDetail && <><div className="history-status-grid">{historyDetail.estados.map((item) => <article key={item.estado} className={`history-status ${String(item.estado).toLowerCase()}`}><strong>{item.total}</strong><span>{item.estado}</span><small>Estado actual de la máquina</small></article>)}</div><div className="history-records"><div><b>Últimos registros del tipo seleccionado</b><small>Se muestran los 60 más recientes; los conteos superiores incluyen todo el historial.</small></div>{historyDetail.registros.map((item) => <article key={item.id_registro}><div><strong>{item.maquina}</strong><span>{item.area}</span></div><div><b>{String(item.fecha).slice(0, 10)}</b><small>{item.tecnicos || "Técnico sin registrar"}</small></div><p>{item.detalles || "Sin detalle registrado"}</p><em className={String(item.estado_maquina).toLowerCase()}>{item.estado_maquina}</em></article>)}</div></>}</section>}
     {error && <p className="form-error">{error}</p>}
     <section className="area-maintenance-filter"><div><p className="eyebrow">VISTA POR ÁREA</p><strong>{areaFilter === "Todas" ? "Toda la planta" : areaFilter}</strong><small>Filtra incidencias, solicitudes y los cuatro tipos de mantenimiento.</small></div><label>Área<select value={areaFilter} onChange={(event) => setAreaFilter(event.target.value)}><option>Todas</option>{areas.map((area) => <option key={area.id} value={area.nombre}>{area.nombre}</option>)}</select></label></section>
     <section className="maintenance-types"><article><span>Preventivo planificado</span><strong>{groups.planificado.length}</strong><small>Calendario del equipo técnico.</small><button onClick={() => setTab("planificado")}>Ver programa</button></article><article><span>Autónomo</span><strong>{groups.autonomo.length}</strong><small>Checklist diario del operario.</small><button onClick={() => setTab("autonomo")}>Abrir checklist</button></article><article><span>Predictivo</span><strong>{groups.predictivo.length}</strong><small>Según condición o medición.</small><button onClick={() => setTab("predictivo")}>Ver tareas</button></article><article><span>Proactivo</span><strong>{groups.proactivo.length}</strong><small>Elimina causa raíz.</small><button onClick={() => setTab("proactivo")}>Ver mejoras</button></article></section>
-    <section className="op-metrics"><div className="red"><strong>{groups.nuevas.length}</strong><span>Correctivos nuevos</span></div><div className="blue"><strong>{groups.atencion.length}</strong><span>En atención</span></div><div className="amber"><strong>{groups.espera.length}</strong><span>Esperando repuesto</span></div><div className="purple"><strong>{pendingSrequests.length}</strong><span>Correctivos importados</span></div><div className="green"><strong>{done.filter((item) => onlyDate(item.fecha_realizacion) === today).length}</strong><span>Completados hoy</span></div></section>
+    <section className="op-metrics"><div className="red"><strong>{groups.nuevas.length}</strong><span>Correctivos nuevos</span></div><div className="blue"><strong>{groups.atencion.length}</strong><span>En atención</span></div><div className="amber"><strong>{groups.espera.length}</strong><span>Esperando repuesto</span></div><div className="purple"><strong>{historyTotal}</strong><span>Historial Excel cargado</span></div><div className="green"><strong>{done.filter((item) => onlyDate(item.fecha_realizacion) === today).length}</strong><span>Completados hoy</span></div></section>
     <section className="op-tabs">{Object.entries(labels).map(([key, name]) => <button key={key} className={tab === key ? "selected" : ""} onClick={() => { setTab(key); setBoardSearch(""); setBoardPriority("Todas"); }}>{name}<span>{groups[key].length}</span></button>)}</section>
     <section className="maintenance-board-controls" aria-label="Filtros de la bandeja de órdenes">
       <div className="board-visible-count"><strong>{selected.length}</strong><span>{supportsPriority ? "órdenes visibles" : "tareas visibles"}</span></div>

@@ -20,11 +20,10 @@ const usuariosRoutes = require("./routes/usuarios");
 
 const app = express();
 
-const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173").split(",").map((origin) => origin.trim());
+const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173").split(",").map((origin) => origin.trim()).filter(Boolean);
 app.use(cors({
     origin: (origin, callback) => {
-        const temporaryTunnel = process.env.ALLOW_TUNNEL_ORIGINS === "true" && /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/i.test(origin || "");
-        return !origin || allowedOrigins.includes(origin) || temporaryTunnel ? callback(null, true) : callback(new Error("Origen no permitido"));
+        return !origin || allowedOrigins.includes(origin) ? callback(null, true) : callback(new Error("Origen no permitido"));
     },
     credentials: true
 }));

@@ -23,7 +23,18 @@ export function IncaMantProvider({ children }) {
     setLocations(realLocations);
   };
 
-  useEffect(() => { refresh().catch((error) => console.warn(error)).finally(() => setLoading(false)); }, []);
+  useEffect(() => {
+    const loadData = () => {
+      setLoading(true);
+      refresh()
+        .catch((error) => console.warn(error))
+        .finally(() => setLoading(false));
+    };
+
+    loadData();
+    window.addEventListener("incamat:login", loadData);
+    return () => window.removeEventListener("incamat:login", loadData);
+  }, []);
 
   const value = useMemo(() => ({
     areas, machines, components, imports, locations, loading, refresh,

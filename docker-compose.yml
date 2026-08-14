@@ -31,7 +31,7 @@ services:
       DB_USER: ${MARIADB_USER:-alyson}
       DB_PASSWORD: ${MARIADB_PASSWORD:-alyson123}
       PORT: 3000
-      ALLOW_TUNNEL_ORIGINS: "true"
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:5173}
     depends_on:
       - mariadb
 
