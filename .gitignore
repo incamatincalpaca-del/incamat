@@ -10,3 +10,4 @@ backend/tmp-srequest.xls
 *.xlsx
 .tmp_presentation/
 *.pptx.inspect.ndjson
+~$*.pptx
