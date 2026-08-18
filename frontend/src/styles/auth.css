@@ -220,3 +220,6 @@ input:focus{
         width:80px;
     }
 }
+
+.qr-login-backdrop{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:20px;background:#071a30b8}.qr-login-dialog{position:relative;width:min(460px,100%);padding:28px;border:1px solid #57708c;border-radius:16px;background:#fff;color:#1b2d49;box-shadow:0 18px 50px #0005;text-align:left}.qr-login-dialog h2{margin:6px 0 8px}.qr-login-dialog .subtitulo{color:#167fbd;font-weight:800;letter-spacing:.08em;font-size:12px}.qr-login-dialog .texto{color:#61718a;line-height:1.5}.qr-login-dialog input{box-sizing:border-box;width:100%;padding:13px;margin-bottom:10px;border:1px solid #cbd9e5;border-radius:8px;font:inherit}.qr-login-dialog .btn-login{width:100%;margin:0}.qr-login-dialog small{display:block;margin-top:14px;color:#6f8096;line-height:1.4}.qr-login-close{position:absolute;top:12px;right:14px;border:0;background:transparent;color:#546983;font-size:28px;cursor:pointer}.qr-camera{display:block;width:100%;min-height:175px;overflow:hidden;background:#10243a;border-radius:10px}.qr-camera video{display:block;width:100%!important;min-height:175px;max-height:280px;object-fit:cover;border-radius:10px}.qr-camera__status{color:#fff}
+
