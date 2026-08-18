@@ -1,0 +1,222 @@
+/* ===========================
+   INCAMAT - AUTH.CSS
+   =========================== */
+
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:"Segoe UI",sans-serif;
+}
+
+body{
+    background:#081321;
+}
+
+/* ===========================
+   FONDO
+   =========================== */
+
+.login-container{
+    width:100%;
+    height:100vh;
+
+    background-image:url("../assets/imagenes/fondo-login.jpg");
+    background-position:center;
+    background-size:cover;
+    background-repeat:no-repeat;
+
+    display:flex;
+    justify-content:center;
+    align-items:center;
+
+    position:relative;
+    overflow:hidden;
+}
+
+.overlay{
+    position:absolute;
+    inset:0;
+
+    background:
+    linear-gradient(
+        rgba(5,15,30,.65),
+        rgba(5,15,30,.60)
+    );
+
+    backdrop-filter:blur(3px);
+}
+
+/* ===========================
+   TARJETA LOGIN
+   =========================== */
+
+.login-card{
+    position:relative;
+    width:400px;
+    padding:28px;
+    border-radius:22px;
+    background:rgba(255,255,255,.08);
+    backdrop-filter:blur(18px);
+    border:1px solid rgba(255,255,255,.18);
+    box-shadow:0 20px 50px rgba(0,0,0,.45);
+    z-index:5;
+}
+
+.login-box{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+}
+
+.logo{
+    width:60px;
+    margin-bottom:12px;
+}
+
+.titulo{
+    color:white;
+    font-size:48px;
+    font-weight:800;
+    letter-spacing:2px;
+}
+
+.titulo span{
+    color:#2f8cff;
+}
+
+.subtitulo{
+    color:#d9d9d9;
+    font-size:11px;
+    margin-top:5px;
+    letter-spacing:1px;
+    text-align:center;
+}
+
+hr{
+    width:100%;
+    margin:28px 0;
+    border:none;
+    border-top:1px solid rgba(255,255,255,.15);
+}
+
+h2{
+    color:white;
+    margin-bottom:10px;
+}
+
+.texto{
+    color:#d0d0d0;
+    margin-bottom:20px;
+    text-align:center;
+    font-size:14px;
+}
+
+input{
+    width:100%;
+    padding:13px 16px;
+    margin-bottom:14px;
+    border-radius:10px;
+    border:1px solid rgba(255,255,255,.15);
+    background:rgba(255,255,255,.08);
+    color:white;
+    outline:none;
+    transition:.3s;
+    font-size:14px;
+}
+
+input::placeholder{
+    color:#dddddd;
+}
+
+input:focus{
+    border-color:#2f8cff;
+    box-shadow:0 0 15px rgba(47,140,255,.35);
+}
+
+.password-box{
+    width:100%;
+    position:relative;
+}
+
+.mostrar{
+    position:absolute;
+    top:14px;
+    right:15px;
+    background:none;
+    border:none;
+    color:white;
+    cursor:pointer;
+    font-size:18px;
+}
+
+.opciones{
+    width:100%;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin:5px 0 28px;
+    color:white;
+    font-size:14px;
+}
+
+.opciones label{
+    display:flex;
+    gap:8px;
+    align-items:center;
+}
+
+.opciones input{
+    width:auto;
+    margin:0;
+}
+
+.opciones a{
+    color:#4ca3ff;
+    text-decoration:none;
+}
+
+.btn-login{
+    width:100%;
+    padding:14px;
+    border:none;
+    border-radius:12px;
+    background:linear-gradient(90deg,#006dff,#39a0ff);
+    color:white;
+    font-size:16px;
+    font-weight:bold;
+    cursor:pointer;
+}
+
+.btn-qr{
+    width:100%;
+    padding:15px;
+    background:transparent;
+    color:#52a9ff;
+    border:1px solid #52a9ff;
+    border-radius:12px;
+    cursor:pointer;
+}
+
+.footer{
+    margin-top:30px;
+    color:#cccccc;
+    font-size:13px;
+    text-align:center;
+}
+
+@media(max-width:650px){
+
+    .login-card{
+        width:92%;
+        padding:30px;
+    }
+
+    .titulo{
+        font-size:42px;
+    }
+
+    .logo{
+        width:80px;
+    }
+}

@@ -1,0 +1,136 @@
+.maquinas-header h1{
+    font-size:42px;
+    color:#0F172A;
+    margin-bottom:8px;
+}
+
+.maquinas-header p{
+    color:#64748b;
+    margin-bottom:30px;
+}
+
+/* Barra superior */
+
+.maquinas-toolbar{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:25px;
+}
+
+.buscador{
+    width:350px;
+    padding:12px 15px;
+    border:1px solid #dbe2ea;
+    border-radius:10px;
+    font-size:14px;
+    outline:none;
+}
+
+.buscador:focus{
+    border-color:#2563eb;
+}
+
+/* Botón */
+
+.btn-nueva{
+    background:#2563eb;
+    color:white;
+    border:none;
+    padding:12px 20px;
+    border-radius:10px;
+    cursor:pointer;
+    font-weight:600;
+    transition:.3s;
+}
+
+.btn-nueva:hover{
+    background:#1d4ed8;
+}
+
+/* Tarjeta */
+
+.tabla-card{
+    background:white;
+    border-radius:18px;
+    padding:25px;
+    box-shadow:0 5px 15px rgba(0,0,0,.08);
+}
+
+/* Tabla */
+
+.tabla-maquinas{
+    width:100%;
+    border-collapse:collapse;
+}
+
+.tabla-maquinas th{
+    background:#f8fafc;
+    color:#0F172A;
+    padding:15px;
+    text-align:left;
+    font-weight:700;
+}
+
+.tabla-maquinas td{
+    padding:15px;
+    border-bottom:1px solid #e2e8f0;
+}
+
+/* Estados */
+
+.estado{
+    padding:6px 12px;
+    border-radius:20px;
+    font-size:13px;
+    font-weight:600;
+}
+
+.verde{
+    background:#dcfce7;
+    color:#15803d;
+}
+
+.amarillo{
+    background:#fef3c7;
+    color:#b45309;
+}
+
+.rojo{
+    background:#fee2e2;
+    color:#b91c1c;
+}
+
+/* Botón ver */
+
+.btn-ver{
+    background:#2563eb;
+    color:white;
+    border:none;
+    padding:8px 14px;
+    border-radius:8px;
+    cursor:pointer;
+    transition:.3s;
+}
+
+.btn-ver:hover{
+    background:#1d4ed8;
+}
+
+/* Responsive */
+
+@media(max-width:900px){
+
+    .maquinas-toolbar{
+        flex-direction:column;
+        gap:15px;
+    }
+
+    .buscador{
+        width:100%;
+    }
+
+    .tabla-card{
+        overflow-x:auto;
+    }
+}
