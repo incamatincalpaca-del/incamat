@@ -1,6 +1,11 @@
 const crypto = require("crypto");
 
-const secret = () => process.env.AUTH_SECRET || "incamat-desarrollo-cambiar-en-produccion";
+const secret = () => {
+  if (!process.env.AUTH_SECRET) {
+    throw new Error("Falta la variable de entorno obligatoria: AUTH_SECRET");
+  }
+  return process.env.AUTH_SECRET;
+};
 const encode = (value) => Buffer.from(value).toString("base64url");
 const sign = (value) => crypto.createHmac("sha256", secret()).update(value).digest("base64url");
 

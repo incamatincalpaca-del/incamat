@@ -1,11 +1,19 @@
 const mariadb = require("mariadb");
 
+const required = (name) => {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Falta la variable de entorno obligatoria: ${name}`);
+  }
+  return value;
+};
+
 const pool = mariadb.createPool({
-    host: process.env.DB_HOST || "mariadb",
-    port: Number(process.env.DB_PORT || 3306),
-    user: process.env.DB_USER || "alyson",
-    password: process.env.DB_PASSWORD || "alyson123",
-    database: process.env.DB_NAME || "incamant",
+  host: required("DB_HOST"),
+  port: Number(required("DB_PORT")),
+  user: required("DB_USER"),
+  password: required("DB_PASSWORD"),
+  database: required("DB_NAME"),
     connectionLimit: 10
 });
 

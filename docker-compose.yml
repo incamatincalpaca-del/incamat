@@ -27,10 +27,11 @@ services:
     environment:
       DB_HOST: mariadb
       DB_PORT: 3306
-      DB_NAME: ${MARIADB_DATABASE:-incamant}
-      DB_USER: ${MARIADB_USER:-alyson}
-      DB_PASSWORD: ${MARIADB_PASSWORD:-alyson123}
+      DB_NAME: ${MARIADB_DATABASE:?Define MARIADB_DATABASE en .env}
+      DB_USER: ${MARIADB_USER:?Define MARIADB_USER en .env}
+      DB_PASSWORD: ${MARIADB_PASSWORD:?Define MARIADB_PASSWORD en .env}
       PORT: 3000
+      AUTH_SECRET: ${AUTH_SECRET:?Define AUTH_SECRET en .env}
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:5173}
     depends_on:
       - mariadb
@@ -40,10 +41,10 @@ services:
     container_name: incamant-db
     restart: always
     environment:
-      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root123}
-      MARIADB_DATABASE: ${MARIADB_DATABASE:-incamant}
-      MARIADB_USER: ${MARIADB_USER:-alyson}
-      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-alyson123}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?Define MARIADB_ROOT_PASSWORD en .env}
+      MARIADB_DATABASE: ${MARIADB_DATABASE:?Define MARIADB_DATABASE en .env}
+      MARIADB_USER: ${MARIADB_USER:?Define MARIADB_USER en .env}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:?Define MARIADB_PASSWORD en .env}
     ports:
       - "3306:3306"
     volumes:
