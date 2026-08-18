@@ -2,6 +2,7 @@ const express = require("express");
 const QRCode = require("qrcode");
 const pool = require("../../config/database");
 const router = express.Router();
+const publicAppUrl = () => (process.env.PUBLIC_APP_URL || "http://localhost:5173").replace(/\/$/, "");
 
 router.get("/", async (req, res) => {
   let conn;
@@ -12,7 +13,7 @@ router.get("/", async (req, res) => {
       (SELECT f.descripcion FROM fallas f WHERE f.id_maquina=m.id AND f.estado <> 'Resuelta' ORDER BY f.fecha_reporte DESC LIMIT 1) AS motivo_parada
       FROM maquinas m JOIN areas a ON a.id = m.id_area ORDER BY a.nombre, m.nombre`);
     res.json(rows);
-  } catch (error) { res.status(500).json({ error: "No fue posible obtener las máquinas." }); }
+  } catch (error) { res.status(500).json({ error: "No fue posible obtener las mÃ¡quinas." }); }
   finally { if (conn) conn.release(); }
 });
 
@@ -33,28 +34,28 @@ router.get("/paradas/resumen", async (_req, res) => {
       GROUP BY a.id,a.nombre ORDER BY paradas DESC,a.nombre`);
     const totals = rows.reduce((acc, row) => ({ paradas: acc.paradas + Number(row.paradas || 0), espera_repuesto: acc.espera_repuesto + Number(row.espera_repuesto || 0), pendiente_atencion: acc.pendiente_atencion + Number(row.pendiente_atencion || 0), en_mantenimiento: acc.en_mantenimiento + Number(row.en_mantenimiento || 0) }), { paradas: 0, espera_repuesto: 0, pendiente_atencion: 0, en_mantenimiento: 0 });
     res.json({ totals, areas: rows.map((row) => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, typeof value === "string" ? value : Number(value || 0)]))) });
-  } catch (error) { res.status(500).json({ error: "No fue posible calcular las paradas por área." }); }
+  } catch (error) { res.status(500).json({ error: "No fue posible calcular las paradas por Ã¡rea." }); }
   finally { if (conn) conn.release(); }
 });
 
 router.post("/", async (req, res) => {
   const { codigo, nombre, id_area, marca = null, modelo = null, descripcion_corta = null, estado = "Operativa" } = req.body;
-  if (!codigo || !nombre || !id_area) return res.status(400).json({ error: "Código, nombre y área son obligatorios." });
+  if (!codigo || !nombre || !id_area) return res.status(400).json({ error: "CÃ³digo, nombre y Ã¡rea son obligatorios." });
   let conn;
   try {
     conn = await pool.getConnection();
     const result = await conn.query("INSERT INTO maquinas (codigo, nombre, id_area, marca, modelo, descripcion_corta, estado) VALUES (?, ?, ?, ?, ?, ?, ?)", [codigo.trim(), nombre.trim(), id_area, marca || null, modelo || null, descripcion_corta || null, estado]);
-    res.status(201).json({ id: Number(result.insertId), mensaje: "Máquina registrada." });
+    res.status(201).json({ id: Number(result.insertId), mensaje: "MÃ¡quina registrada." });
   } catch (error) {
     const status = error.code === "ER_DUP_ENTRY" ? 409 : 500;
-    res.status(status).json({ error: status === 409 ? "El código de máquina ya existe." : "No fue posible registrar la máquina." });
+    res.status(status).json({ error: status === 409 ? "El cÃ³digo de mÃ¡quina ya existe." : "No fue posible registrar la mÃ¡quina." });
   } finally { if (conn) conn.release(); }
 });
 
 router.get("/por-qr/:token", async (req, res) => {
   let conn;
-  try { conn = await pool.getConnection(); const rows = await conn.query("SELECT m.id,m.codigo,m.nombre,m.estado,a.nombre AS area FROM maquinas m JOIN areas a ON a.id=m.id_area WHERE m.qr_token=? OR m.codigo=?", [req.params.token, req.params.token]); if (!rows[0]) return res.status(404).json({ error: "Código QR no reconocido." }); res.json(rows[0]); }
-  catch (error) { res.status(500).json({ error: "No fue posible identificar la máquina." }); }
+  try { conn = await pool.getConnection(); const rows = await conn.query("SELECT m.id,m.codigo,m.nombre,m.estado,a.nombre AS area FROM maquinas m JOIN areas a ON a.id=m.id_area WHERE m.qr_token=? OR m.codigo=?", [req.params.token, req.params.token]); if (!rows[0]) return res.status(404).json({ error: "CÃ³digo QR no reconocido." }); res.json(rows[0]); }
+  catch (error) { res.status(500).json({ error: "No fue posible identificar la mÃ¡quina." }); }
   finally { if (conn) conn.release(); }
 });
 
@@ -63,9 +64,9 @@ router.get("/:id/qr", async (req, res) => {
   try {
     conn = await pool.getConnection();
     const rows = await conn.query("SELECT id, codigo, qr_token FROM maquinas WHERE id=?", [req.params.id]);
-    if (!rows[0]) return res.status(404).json({ error: "Máquina no encontrada." });
+    if (!rows[0]) return res.status(404).json({ error: "MÃ¡quina no encontrada." });
     const machine = rows[0];
-    const value = `http://localhost:5173/reportar/${encodeURIComponent(machine.qr_token || machine.codigo)}`;
+    const value = `${publicAppUrl()}/reportar/${encodeURIComponent(machine.qr_token || machine.codigo)}`;
     const image = await QRCode.toDataURL(value, { width: 360, margin: 2, errorCorrectionLevel: "M" });
     res.json({ valor: value, imagen: image, token: machine.qr_token || machine.codigo });
   } catch (error) { console.error(error); res.status(500).json({ error: "No fue posible generar el QR." }); }
@@ -79,7 +80,7 @@ router.get("/:id/qr.png", async (req, res) => {
     const rows = await conn.query("SELECT codigo, qr_token FROM maquinas WHERE id=?", [req.params.id]);
     if (!rows[0]) return res.status(404).end();
     const machine = rows[0];
-    const value = `http://localhost:5173/reportar/${encodeURIComponent(machine.qr_token || machine.codigo)}`;
+    const value = `${publicAppUrl()}/reportar/${encodeURIComponent(machine.qr_token || machine.codigo)}`;
     const image = await QRCode.toBuffer(value, { type: "png", width: 360, margin: 2, errorCorrectionLevel: "M" });
     res.type("png").send(image);
   } catch (error) { res.status(500).end(); }
@@ -101,3 +102,4 @@ router.get("/:id/historial", async (req, res) => {
 });
 
 module.exports = router;
+
