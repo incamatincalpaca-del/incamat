@@ -19,13 +19,54 @@ async function verifyPassword(password, stored) {
   return bytesToBase64(bits) === expected;
 }
 
+const DEFAULT_USERS = [
+  { nombre: "Administrador", usuario: "admin", correo: "admin@incamat.local", rol: "Administrador", secret: "INCAMAT_ADMIN_PASSWORD" },
+  { nombre: "Ingeniero de mantenimiento", usuario: "ingeniero", correo: "ingeniero@incamat.local", rol: "Ingeniero", secret: "INCAMAT_INGENIERO_PASSWORD" },
+  { nombre: "Tecnico de mantenimiento", usuario: "tecnico", correo: "tecnico@incamat.local", rol: "Tecnico", secret: "INCAMAT_TECNICO_PASSWORD" },
+  { nombre: "Operario de planta", usuario: "operario", correo: "operario@incamat.local", rol: "Operario", secret: "INCAMAT_OPERARIO_PASSWORD" }
+];
+
+async function passwordHash(password, saltText) {
+  const salt = new TextEncoder().encode(saltText);
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: 120000 }, key, 256);
+  return `pbkdf2$120000${bytesToBase64(salt)}${bytesToBase64(bits)}`;
+}
+
 const requireDb = (env) => {
-  if (!env.DB) throw new Error("La base de datos D1 aún no está vinculada al Worker.");
+  if (!env.DB) throw new Error("La base de datos D1 aun no esta vinculada al Worker.");
   return env.DB;
 };
 
+let schemaReady;
+async function ensureSchema(db) {
+  if (!schemaReady) {
+    schemaReady = db.batch([
+      db.prepare("CREATE TABLE IF NOT EXISTS usuarios (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL, usuario TEXT NOT NULL UNIQUE, correo TEXT, rol TEXT NOT NULL, password_hash TEXT NOT NULL, estado INTEGER NOT NULL DEFAULT 1, creado TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+      db.prepare("CREATE TABLE IF NOT EXISTS areas (id INTEGER PRIMARY KEY AUTOINCREMENT, codigo TEXT NOT NULL UNIQUE, nombre TEXT NOT NULL UNIQUE, descripcion TEXT, responsable TEXT, estado TEXT NOT NULL DEFAULT 'Activa', creado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+      db.prepare("CREATE TABLE IF NOT EXISTS maquinas (id INTEGER PRIMARY KEY AUTOINCREMENT, codigo TEXT NOT NULL UNIQUE, nombre TEXT NOT NULL, id_area INTEGER NOT NULL, marca TEXT, modelo TEXT, descripcion_corta TEXT, estado TEXT NOT NULL DEFAULT 'Operativa', qr_token TEXT UNIQUE)"),
+      db.prepare("CREATE TABLE IF NOT EXISTS repuestos (id INTEGER PRIMARY KEY AUTOINCREMENT, codigo TEXT NOT NULL UNIQUE, descripcion TEXT NOT NULL, familia_tecnica TEXT, criticidad TEXT NOT NULL DEFAULT 'Sin evaluar', stock_actual REAL NOT NULL DEFAULT 0, stock_minimo REAL NOT NULL DEFAULT 0, stock_verificado INTEGER NOT NULL DEFAULT 0, unidad TEXT, ubicacion TEXT, costo_ultimo REAL, fecha_ultima_solicitud TEXT)"),
+      db.prepare("CREATE TABLE IF NOT EXISTS repuestos_areas (id_repuesto INTEGER NOT NULL, id_area INTEGER NOT NULL, PRIMARY KEY(id_repuesto,id_area))"),
+      db.prepare("CREATE TABLE IF NOT EXISTS fallas (id INTEGER PRIMARY KEY AUTOINCREMENT, id_maquina INTEGER NOT NULL, prioridad TEXT NOT NULL DEFAULT 'Media', descripcion TEXT NOT NULL, estado TEXT NOT NULL DEFAULT 'Reportada', fecha_reporte TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, fecha_resolucion TEXT)"),
+      db.prepare("CREATE TABLE IF NOT EXISTS mantenimientos (id INTEGER PRIMARY KEY AUTOINCREMENT, id_maquina INTEGER NOT NULL, id_falla INTEGER, tipo TEXT NOT NULL, modalidad TEXT, estado TEXT NOT NULL DEFAULT 'Programado', fecha_programada TEXT NOT NULL, fecha_realizacion TEXT, responsable TEXT, descripcion TEXT, observacion TEXT, checklist TEXT)")
+    ]);
+  }
+  await schemaReady;
+}
+
+async function ensureDefaultUsers(db, env) {
+  for (const item of DEFAULT_USERS) {
+    const password = env[item.secret];
+    if (!password) continue;
+    const hash = await passwordHash(password, `incamat-${item.usuario}-v1`);
+    await db.prepare("INSERT OR IGNORE INTO usuarios (nombre,usuario,correo,rol,password_hash,estado) VALUES (?, ?, ?, ?, ?, 1)")
+      .bind(item.nombre,item.usuario,item.correo,item.rol,hash).run();
+  }
+}
+
 async function api(request, env, url) {
   const db = requireDb(env);
+  await ensureSchema(db);
   const path = url.pathname.replace(/^\/api/, "") || "/";
 
   if (path === "/" && request.method === "GET") return json({ sistema: "INCAMAT", estado: "Online", baseDatos: "D1" });
@@ -43,6 +84,27 @@ async function api(request, env, url) {
       (SELECT f.descripcion FROM fallas f WHERE f.id_maquina=m.id AND f.estado <> 'Resuelta' ORDER BY f.fecha_reporte DESC LIMIT 1) AS motivo_parada
       FROM maquinas m JOIN areas a ON a.id=m.id_area ORDER BY a.nombre,m.nombre`).all();
     return json(result.results || []);
+  }
+
+  if (path.startsWith("/maquinas/por-qr/") && request.method === "GET") {
+    const token = decodeURIComponent(path.slice("/maquinas/por-qr/".length));
+    const machine = await db.prepare("SELECT m.*,a.nombre AS area FROM maquinas m JOIN areas a ON a.id=m.id_area WHERE m.qr_token=? OR m.codigo=? LIMIT 1").bind(token,token).first();
+    if (!machine) return json({ error: "No se encontro una maquina para este codigo QR." }, { status: 404 });
+    return json(machine);
+  }
+
+  if (path === "/fallas" && request.method === "POST") {
+    const form = await request.formData();
+    const idMaquina=Number(form.get("id_maquina"));
+    const descripcion=String(form.get("descripcion")||"").trim();
+    const prioridad=String(form.get("prioridad")||"Media").trim();
+    const fecha=String(form.get("fecha_ocurrencia")||new Date().toISOString());
+    if (!idMaquina || !descripcion) return json({ error: "Indica la maquina y la descripcion de la incidencia." }, { status: 400 });
+    const exists=await db.prepare("SELECT id FROM maquinas WHERE id=?").bind(idMaquina).first();
+    if (!exists) return json({ error: "La maquina ya no esta registrada." }, { status: 404 });
+    const insert=await db.prepare("INSERT INTO fallas (id_maquina,prioridad,descripcion,estado,fecha_reporte) VALUES (?, ?, ?, 'Reportada', ?)").bind(idMaquina,prioridad,descripcion,fecha).run();
+    await db.prepare("UPDATE maquinas SET estado='Detenida' WHERE id=?").bind(idMaquina).run();
+    return json({ success:true,id:insert.meta?.last_row_id,mensaje:"Incidencia enviada a Mantenimiento." },{status:201});
   }
 
   if (path === "/repuestos" && request.method === "GET") {
@@ -77,9 +139,11 @@ async function api(request, env, url) {
 
   if (path === "/login" && request.method === "POST") {
     const { usuario, password } = await readBody(request);
-    const account = await db.prepare("SELECT id,nombre,usuario,correo,rol,password_hash FROM usuarios WHERE usuario=? AND estado=1").bind(usuario || "").first();
-    if (!account || !(await verifyPassword(password || "", account.password_hash))) return json({ success: false, mensaje: "Usuario o contraseña incorrectos" }, { status: 401 });
-    return json({ success: true, usuario: { id: account.id, nombre: account.nombre, usuario: account.usuario, correo: account.correo, rol: account.rol }, token: crypto.randomUUID() });
+    await ensureDefaultUsers(db,env);
+    const identity=String(usuario||"").trim().toLowerCase();
+    const account=await db.prepare("SELECT id,nombre,usuario,correo,rol,password_hash FROM usuarios WHERE (LOWER(usuario)=? OR LOWER(correo)=?) AND estado=1").bind(identity,identity).first();
+    if (!account || !(await verifyPassword(password||"",account.password_hash))) return json({ success:false,mensaje:"Usuario o contrasena incorrectos" },{status:401});
+    return json({ success:true,usuario:{id:account.id,nombre:account.nombre,usuario:account.usuario,correo:account.correo,rol:account.rol},token:crypto.randomUUID() });
   }
 
   return json({ error: "Ruta aún no disponible durante la migración a Cloudflare." }, { status: 501 });
