@@ -80,12 +80,55 @@ async function ensureDefaultUsers(db, env) {
   }
 }
 
+// Ruta temporal y protegida para copiar los datos operativos desde la base
+// local. Solo funciona mientras exista la clave secreta en Cloudflare; no se
+// publica ninguna credencial ni se expone en la interfaz de la aplicación.
+const migrationAllowed = (request, env) => {
+  const key = request.headers.get("x-incamat-migration-key") || "";
+  return Boolean(env.INCAMAT_MIGRATION_KEY) && key === env.INCAMAT_MIGRATION_KEY;
+};
+
+const migrationStatements = (db, collection, records) => {
+  const statements = [];
+  for (const row of records) {
+    if (collection === "areas") statements.push(db.prepare(`INSERT OR REPLACE INTO areas
+      (id,codigo,nombre,descripcion,responsable,estado) VALUES (?,?,?,?,?,?)`).bind(
+      row.id, row.codigo, row.nombre, row.descripcion, row.responsable, row.estado));
+    if (collection === "maquinas") statements.push(db.prepare(`INSERT OR REPLACE INTO maquinas
+      (id,codigo,nombre,id_area,marca,modelo,descripcion_corta,estado,qr_token) VALUES (?,?,?,?,?,?,?,?,?)`).bind(
+      row.id, row.codigo, row.nombre, row.id_area, row.marca, row.modelo, row.descripcion_corta, row.estado, row.qr_token));
+    if (collection === "repuestos") statements.push(db.prepare(`INSERT OR REPLACE INTO repuestos
+      (id,codigo,descripcion,familia_tecnica,criticidad,stock_actual,stock_minimo,stock_verificado,unidad,ubicacion,costo_ultimo,fecha_ultima_solicitud) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+      row.id, row.codigo, row.descripcion, row.familia_tecnica, row.criticidad, row.stock_actual, row.stock_minimo, row.stock_verificado, row.unidad, row.ubicacion, row.costo_ultimo, row.fecha_ultima_solicitud));
+    if (collection === "repuestos_areas") statements.push(db.prepare(`INSERT OR REPLACE INTO repuestos_areas
+      (id_repuesto,id_area) VALUES (?,?)`).bind(row.id_repuesto, row.id_area));
+    if (collection === "fallas") statements.push(db.prepare(`INSERT OR REPLACE INTO fallas
+      (id,id_maquina,prioridad,descripcion,estado,fecha_reporte,fecha_resolucion) VALUES (?,?,?,?,?,?,?)`).bind(
+      row.id, row.id_maquina, row.prioridad, row.descripcion, row.estado, row.fecha_reporte, row.fecha_resolucion));
+    if (collection === "mantenimientos") statements.push(db.prepare(`INSERT OR REPLACE INTO mantenimientos
+      (id,id_maquina,id_falla,tipo,modalidad,estado,fecha_programada,fecha_realizacion,responsable,descripcion,observacion,checklist) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+      row.id, row.id_maquina, row.id_falla, row.tipo, row.modalidad, row.estado, row.fecha_programada, row.fecha_realizacion, row.responsable, row.descripcion, row.observacion, row.checklist));
+  }
+  return statements;
+};
+
 async function api(request, env, url) {
   const db = requireDb(env);
   await ensureSchema(db);
   const path = url.pathname.replace(/^\/api/, "") || "/";
 
   if (path === "/" && request.method === "GET") return json({ sistema: "INCAMAT", estado: "Online", baseDatos: "D1" });
+
+  if (path === "/migracion-inicial" && request.method === "POST") {
+    if (!migrationAllowed(request, env)) return json({ error: "No autorizado para la migración inicial." }, { status: 403 });
+    const { collection, records } = await readBody(request);
+    const allowed = new Set(["areas", "maquinas", "repuestos", "repuestos_areas", "fallas", "mantenimientos"]);
+    if (!allowed.has(collection) || !Array.isArray(records) || records.length === 0 || records.length > 100) {
+      return json({ error: "Lote de migración no válido." }, { status: 400 });
+    }
+    await db.batch(migrationStatements(db, collection, records));
+    return json({ success: true, collection, registros: records.length });
+  }
 
   if (path === "/areas" && request.method === "GET") {
     const result = await db.prepare(`SELECT a.id,a.codigo,a.nombre,a.descripcion,a.responsable,a.estado,COUNT(m.id) AS maquinas
