@@ -62,8 +62,17 @@ async function ensureDefaultUsers(db, env) {
     const password = env[item.secret];
     if (!password) continue;
     const hash = await passwordHash(password, `incamat-${item.usuario}-v1`);
-    await db.prepare(`INSERT OR IGNORE INTO usuarios (nombre, usuario, correo, rol, password_hash, estado)
-      VALUES (?, ?, ?, ?, ?, 1)`).bind(item.nombre, item.usuario, item.correo, item.rol, hash).run();
+    // Estas cuatro cuentas son las cuentas iniciales de la organización.
+    // Se sincronizan con los secretos seguros de Cloudflare para que una
+    // contraseña antigua de una prueba no impida volver a ingresar.
+    await db.prepare(`INSERT INTO usuarios (nombre, usuario, correo, rol, password_hash, estado)
+      VALUES (?, ?, ?, ?, ?, 1)
+      ON CONFLICT(usuario) DO UPDATE SET
+        nombre=excluded.nombre,
+        correo=excluded.correo,
+        rol=excluded.rol,
+        password_hash=excluded.password_hash,
+        estado=1`).bind(item.nombre, item.usuario, item.correo, item.rol, hash).run();
   }
 }
 
