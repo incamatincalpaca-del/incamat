@@ -17,6 +17,7 @@ const fallasRoutes = require("./routes/fallas");
 const solicitudesRoutes = require("./routes/solicitudes");
 const solicitudesExternasRoutes = require("./routes/solicitudesExternas");
 const usuariosRoutes = require("./routes/usuarios");
+const anunciosRoutes = require("./routes/anuncios");
 
 const app = express();
 
@@ -29,9 +30,15 @@ app.use(cors({
 }));
 
 app.use(express.json());
+// Los catÃ¡logos y usuarios se actualizan con frecuencia; evitamos que el
+// navegador conserve listas antiguas despuÃ©s de una correcciÃ³n o importaciÃ³n.
+app.use("/api", (_req, res, next) => {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    next();
+});
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
-// Rutas de máquinas
+// Rutas de mÃ¡quinas
 app.use("/api/areas", areasRoutes);
 app.use("/api/maquinas", maquinasRoutes);
 app.use("/api/componentes", componentesRoutes);
@@ -44,6 +51,7 @@ app.use("/api/fallas", fallasRoutes);
 app.use("/api/solicitudes", solicitudesRoutes);
 app.use("/api/solicitudes-externas", solicitudesExternasRoutes);
 app.use("/api/usuarios", usuariosRoutes);
+app.use("/api/anuncios", anunciosRoutes);
 
 // Verificar API
 app.get("/api", async (req, res) => {
@@ -67,7 +75,7 @@ app.get("/api", async (req, res) => {
         console.error(error);
 
         res.status(500).json({
-            error: "Error de conexión con MariaDB"
+            error: "Error de conexiÃ³n con MariaDB"
         });
 
     }
@@ -77,15 +85,20 @@ app.get("/api", async (req, res) => {
 // Login
 app.post("/api/login", async (req, res) => {
 
-    const { usuario, password } = req.body;
+    const usuario = String(req.body.usuario || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
+
+    if (!usuario || !password) {
+        return res.status(400).json({ success: false, mensaje: "Ingresa tu usuario o correo y contraseÃ±a." });
+    }
 
     try {
 
         const conn = await pool.getConnection();
 
         const rows = await conn.query(
-            "SELECT id, nombre, usuario, correo, rol, password, password_hash FROM usuarios WHERE usuario=? AND estado=TRUE",
-            [usuario]
+            "SELECT id, nombre, usuario, correo, rol, password, password_hash FROM usuarios WHERE (LOWER(usuario)=? OR LOWER(correo)=?) AND estado=TRUE",
+            [usuario, usuario]
         );
 
         const account = rows[0];
@@ -111,7 +124,7 @@ app.post("/api/login", async (req, res) => {
 
         res.status(401).json({
             success: false,
-            mensaje: "Usuario o contraseña incorrectos"
+            mensaje: "Usuario o contraseÃ±a incorrectos"
         });
 
     } catch (error) {
@@ -128,3 +141,4 @@ app.post("/api/login", async (req, res) => {
 });
 
 module.exports = app;
+
