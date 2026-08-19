@@ -13,7 +13,7 @@ const base64ToBytes = (value) => Uint8Array.from(atob(value), (char) => char.cha
 const DEFAULT_USERS = [
   { nombre: "Administrador", usuario: "admin", correo: "admin@incamat.local", rol: "Administrador", secret: "INCAMAT_ADMIN_PASSWORD" },
   { nombre: "Ingeniero de mantenimiento", usuario: "ingeniero", correo: "ingeniero@incamat.local", rol: "Ingeniero", secret: "INCAMAT_INGENIERO_PASSWORD" },
-  { nombre: "TÃ©cnico de mantenimiento", usuario: "tecnico", correo: "tecnico@incamat.local", rol: "TÃ©cnico", secret: "INCAMAT_TECNICO_PASSWORD" },
+  { nombre: "Técnico de mantenimiento", usuario: "tecnico", correo: "tecnico@incamat.local", rol: "Técnico", secret: "INCAMAT_TECNICO_PASSWORD" },
   { nombre: "Operario de planta", usuario: "operario", correo: "operario@incamat.local", rol: "Operario", secret: "INCAMAT_OPERARIO_PASSWORD" },
 ];
 
@@ -25,7 +25,7 @@ async function passwordHash(password, saltText) {
 }
 
 async function verifyPassword(password, stored) {
-  // Formato de migraciÃ³n: pbkdf2$iteraciones$saltBase64$hashBase64.
+  // Formato de migración: pbkdf2$iteraciones$saltBase64$hashBase64.
   const [algorithm, iterations, salt, expected] = String(stored || "").split("$");
   if (algorithm !== "pbkdf2" || !iterations || !salt || !expected) return false;
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
@@ -34,10 +34,13 @@ async function verifyPassword(password, stored) {
 }
 
 const requireDb = (env) => {
-  if (!env.DB) throw new Error("La base de datos D1 aun no esta vinculada al Worker.");
+  if (!env.DB) throw new Error("La base de datos D1 aún no está vinculada al Worker.");
   return env.DB;
 };
 
+// La primera llamada deja la estructura lista en una D1 nueva. Los datos
+// operativos se cargan después mediante la migración protegida, sin depender
+// de que alguien tenga que crear tablas manualmente desde el panel.
 let schemaReady;
 async function ensureSchema(db) {
   if (!schemaReady) {
@@ -52,7 +55,7 @@ async function ensureSchema(db) {
     ]);
   }
   await schemaReady;
-};
+}
 
 async function ensureDefaultUsers(db, env) {
   for (const item of DEFAULT_USERS) {
@@ -91,7 +94,7 @@ async function api(request, env, url) {
     const machine = await db.prepare(`SELECT m.*, a.nombre AS area
       FROM maquinas m JOIN areas a ON a.id=m.id_area
       WHERE m.qr_token=? OR m.codigo=? LIMIT 1`).bind(token, token).first();
-    if (!machine) return json({ error: "No se encontrÃ³ una mÃ¡quina para este cÃ³digo QR." }, { status: 404 });
+    if (!machine) return json({ error: "No se encontró una máquina para este código QR." }, { status: 404 });
     return json(machine);
   }
 
@@ -116,9 +119,9 @@ async function api(request, env, url) {
     const descripcion = String(form.get("descripcion") || "").trim();
     const prioridad = String(form.get("prioridad") || "Media").trim();
     const fecha = String(form.get("fecha_ocurrencia") || new Date().toISOString());
-    if (!idMaquina || !descripcion) return json({ error: "Indica la mÃ¡quina y la descripciÃ³n de la incidencia." }, { status: 400 });
+    if (!idMaquina || !descripcion) return json({ error: "Indica la máquina y la descripción de la incidencia." }, { status: 400 });
     const exists = await db.prepare("SELECT id FROM maquinas WHERE id=?").bind(idMaquina).first();
-    if (!exists) return json({ error: "La mÃ¡quina ya no estÃ¡ registrada." }, { status: 404 });
+    if (!exists) return json({ error: "La máquina ya no está registrada." }, { status: 404 });
     const insert = await db.prepare(`INSERT INTO fallas (id_maquina, prioridad, descripcion, estado, fecha_reporte)
       VALUES (?, ?, ?, 'Reportada', ?)`)
       .bind(idMaquina, prioridad, descripcion, fecha).run();
@@ -141,16 +144,19 @@ async function api(request, env, url) {
     });
   }
 
-  if (path === "/login" && request.method === "POST") {
+  // El formulario web usa /auth/login, mientras que las primeras pruebas
+  // de la API usaban /login. Mantenemos ambas rutas para no interrumpir
+  // ningún acceso existente.
+  if ((path === "/login" || path === "/auth/login") && request.method === "POST") {
     const { usuario, password } = await readBody(request);
     await ensureDefaultUsers(db, env);
     const identity = String(usuario || "").trim().toLowerCase();
     const account = await db.prepare("SELECT id,nombre,usuario,correo,rol,password_hash FROM usuarios WHERE (LOWER(usuario)=? OR LOWER(correo)=?) AND estado=1").bind(identity, identity).first();
-    if (!account || !(await verifyPassword(password || "", account.password_hash))) return json({ success: false, mensaje: "Usuario o contraseÃ±a incorrectos" }, { status: 401 });
+    if (!account || !(await verifyPassword(password || "", account.password_hash))) return json({ success: false, mensaje: "Usuario o contraseña incorrectos" }, { status: 401 });
     return json({ success: true, usuario: { id: account.id, nombre: account.nombre, usuario: account.usuario, correo: account.correo, rol: account.rol }, token: crypto.randomUUID() });
   }
 
-  return json({ error: "Ruta aÃºn no disponible durante la migraciÃ³n a Cloudflare." }, { status: 501 });
+  return json({ error: "Ruta aún no disponible durante la migración a Cloudflare." }, { status: 501 });
 }
 
 export default {
