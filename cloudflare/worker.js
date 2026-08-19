@@ -10,8 +10,22 @@ const readBody = async (request) => {
 const bytesToBase64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
 const base64ToBytes = (value) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 
+const DEFAULT_USERS = [
+  { nombre: "Administrador", usuario: "admin", correo: "admin@incamat.local", rol: "Administrador", secret: "INCAMAT_ADMIN_PASSWORD" },
+  { nombre: "Ingeniero de mantenimiento", usuario: "ingeniero", correo: "ingeniero@incamat.local", rol: "Ingeniero", secret: "INCAMAT_INGENIERO_PASSWORD" },
+  { nombre: "TÃ©cnico de mantenimiento", usuario: "tecnico", correo: "tecnico@incamat.local", rol: "TÃ©cnico", secret: "INCAMAT_TECNICO_PASSWORD" },
+  { nombre: "Operario de planta", usuario: "operario", correo: "operario@incamat.local", rol: "Operario", secret: "INCAMAT_OPERARIO_PASSWORD" },
+];
+
+async function passwordHash(password, saltText) {
+  const salt = new TextEncoder().encode(saltText);
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: 120000 }, key, 256);
+  return `pbkdf2$120000$${bytesToBase64(salt)}$${bytesToBase64(bits)}`;
+}
+
 async function verifyPassword(password, stored) {
-  // Formato de migración: pbkdf2$iteraciones$saltBase64$hashBase64.
+  // Formato de migraciÃ³n: pbkdf2$iteraciones$saltBase64$hashBase64.
   const [algorithm, iterations, salt, expected] = String(stored || "").split("$");
   if (algorithm !== "pbkdf2" || !iterations || !salt || !expected) return false;
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
@@ -20,9 +34,19 @@ async function verifyPassword(password, stored) {
 }
 
 const requireDb = (env) => {
-  if (!env.DB) throw new Error("La base de datos D1 aún no está vinculada al Worker.");
+  if (!env.DB) throw new Error("La base de datos D1 aÃºn no estÃ¡ vinculada al Worker.");
   return env.DB;
 };
+
+async function ensureDefaultUsers(db, env) {
+  for (const item of DEFAULT_USERS) {
+    const password = env[item.secret];
+    if (!password) continue;
+    const hash = await passwordHash(password, `incamat-${item.usuario}-v1`);
+    await db.prepare(`INSERT OR IGNORE INTO usuarios (nombre, usuario, correo, rol, password_hash, estado)
+      VALUES (?, ?, ?, ?, ?, 1)`).bind(item.nombre, item.usuario, item.correo, item.rol, hash).run();
+  }
+}
 
 async function api(request, env, url) {
   const db = requireDb(env);
@@ -45,6 +69,15 @@ async function api(request, env, url) {
     return json(result.results || []);
   }
 
+  if (path.startsWith("/maquinas/por-qr/") && request.method === "GET") {
+    const token = decodeURIComponent(path.slice("/maquinas/por-qr/".length));
+    const machine = await db.prepare(`SELECT m.*, a.nombre AS area
+      FROM maquinas m JOIN areas a ON a.id=m.id_area
+      WHERE m.qr_token=? OR m.codigo=? LIMIT 1`).bind(token, token).first();
+    if (!machine) return json({ error: "No se encontrÃ³ una mÃ¡quina para este cÃ³digo QR." }, { status: 404 });
+    return json(machine);
+  }
+
   if (path === "/repuestos" && request.method === "GET") {
     const result = await db.prepare(`SELECT r.*,GROUP_CONCAT(DISTINCT a.nombre) AS areas
       FROM repuestos r LEFT JOIN repuestos_areas ra ON ra.id_repuesto=r.id LEFT JOIN areas a ON a.id=ra.id_area
@@ -58,6 +91,22 @@ async function api(request, env, url) {
       LEFT JOIN fallas f ON f.id=mt.id_falla
       ORDER BY CASE mt.estado WHEN 'En proceso' THEN 1 WHEN 'Programado' THEN 2 ELSE 3 END,mt.fecha_programada`).all();
     return json(result.results || []);
+  }
+
+  if (path === "/fallas" && request.method === "POST") {
+    const form = await request.formData();
+    const idMaquina = Number(form.get("id_maquina"));
+    const descripcion = String(form.get("descripcion") || "").trim();
+    const prioridad = String(form.get("prioridad") || "Media").trim();
+    const fecha = String(form.get("fecha_ocurrencia") || new Date().toISOString());
+    if (!idMaquina || !descripcion) return json({ error: "Indica la mÃ¡quina y la descripciÃ³n de la incidencia." }, { status: 400 });
+    const exists = await db.prepare("SELECT id FROM maquinas WHERE id=?").bind(idMaquina).first();
+    if (!exists) return json({ error: "La mÃ¡quina ya no estÃ¡ registrada." }, { status: 404 });
+    const insert = await db.prepare(`INSERT INTO fallas (id_maquina, prioridad, descripcion, estado, fecha_reporte)
+      VALUES (?, ?, ?, 'Reportada', ?)`)
+      .bind(idMaquina, prioridad, descripcion, fecha).run();
+    await db.prepare("UPDATE maquinas SET estado='Detenida' WHERE id=?").bind(idMaquina).run();
+    return json({ success: true, id: insert.meta?.last_row_id, mensaje: "Incidencia enviada a Mantenimiento." }, { status: 201 });
   }
 
   if (path === "/dashboard" && request.method === "GET") {
@@ -77,12 +126,14 @@ async function api(request, env, url) {
 
   if (path === "/login" && request.method === "POST") {
     const { usuario, password } = await readBody(request);
-    const account = await db.prepare("SELECT id,nombre,usuario,correo,rol,password_hash FROM usuarios WHERE usuario=? AND estado=1").bind(usuario || "").first();
-    if (!account || !(await verifyPassword(password || "", account.password_hash))) return json({ success: false, mensaje: "Usuario o contraseña incorrectos" }, { status: 401 });
+    await ensureDefaultUsers(db, env);
+    const identity = String(usuario || "").trim().toLowerCase();
+    const account = await db.prepare("SELECT id,nombre,usuario,correo,rol,password_hash FROM usuarios WHERE (LOWER(usuario)=? OR LOWER(correo)=?) AND estado=1").bind(identity, identity).first();
+    if (!account || !(await verifyPassword(password || "", account.password_hash))) return json({ success: false, mensaje: "Usuario o contraseÃ±a incorrectos" }, { status: 401 });
     return json({ success: true, usuario: { id: account.id, nombre: account.nombre, usuario: account.usuario, correo: account.correo, rol: account.rol }, token: crypto.randomUUID() });
   }
 
-  return json({ error: "Ruta aún no disponible durante la migración a Cloudflare." }, { status: 501 });
+  return json({ error: "Ruta aÃºn no disponible durante la migraciÃ³n a Cloudflare." }, { status: 501 });
 }
 
 export default {
@@ -96,3 +147,4 @@ export default {
     }
   }
 };
+
