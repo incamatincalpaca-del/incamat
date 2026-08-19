@@ -20,8 +20,12 @@ const DEFAULT_USERS = [
 async function passwordHash(password, saltText) {
   const salt = new TextEncoder().encode(saltText);
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: 120000 }, key, 256);
-  return `pbkdf2$120000$${bytesToBase64(salt)}$${bytesToBase64(bits)}`;
+  // Cloudflare Workers admite hasta 100 000 iteraciones para PBKDF2.
+  // Este valor conserva una derivación robusta y permite iniciar sesión
+  // desde cualquier navegador, incluido el móvil.
+  const iterations = 100000;
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, key, 256);
+  return `pbkdf2$${iterations}$${bytesToBase64(salt)}$${bytesToBase64(bits)}`;
 }
 
 async function verifyPassword(password, stored) {
