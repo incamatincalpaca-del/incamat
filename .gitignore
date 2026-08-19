@@ -5,6 +5,8 @@ backend/uploads/
 npm-debug.log*
 tmp/
 outputs/
+cloudflare/exports/
+backend/exports/
 backend/tmp-srequest.xls
 *.xls
 *.xlsx
