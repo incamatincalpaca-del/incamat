@@ -42,6 +42,15 @@ const requireDb = (env) => {
   return env.DB;
 };
 
+const withUtf8 = (response) => {
+  const headers = new Headers(response.headers);
+  const contentType = headers.get("content-type") || "";
+  if (/^(text\/|application\/(javascript|json))/.test(contentType) && !/charset=/i.test(contentType)) {
+    headers.set("content-type", `${contentType}; charset=utf-8`);
+  }
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+};
+
 // La primera llamada deja la estructura lista en una D1 nueva. Los datos
 // operativos se cargan después mediante la migración protegida, sin depender
 // de que alguien tenga que crear tablas manualmente desde el panel.
@@ -216,6 +225,14 @@ async function api(request, env, url) {
     });
   }
 
+  // Diagnóstico sin datos sensibles: permite confirmar que los secretos de
+  // acceso están disponibles en el Worker sin revelar sus valores.
+  if (path === "/configuracion/accesos" && request.method === "GET") {
+    return json({
+      secretos_configurados: Object.fromEntries(DEFAULT_USERS.map((item) => [item.usuario, Boolean(env[item.secret] || env[item.legacySecret])]))
+    });
+  }
+
   // El formulario web usa /auth/login, mientras que las primeras pruebas
   // de la API usaban /login. Mantenemos ambas rutas para no interrumpir
   // ningún acceso existente.
@@ -238,7 +255,7 @@ export default {
     const url = new URL(request.url);
     try {
       if (url.pathname === "/api" || url.pathname.startsWith("/api/")) return await api(request, env, url);
-      return env.ASSETS.fetch(request);
+      return withUtf8(await env.ASSETS.fetch(request));
     } catch (error) {
       return json({ error: error.message || "No fue posible procesar la solicitud." }, { status: 500 });
     }
