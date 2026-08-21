@@ -11,10 +11,10 @@ const bytesToBase64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(byte
 const base64ToBytes = (value) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 
 const DEFAULT_USERS = [
-  { nombre: "Administrador", usuario: "admin", correo: "admin@incamat.local", rol: "Administrador", secret: "INCAMAT_ADMIN_PASSWORD" },
-  { nombre: "Ingeniero de mantenimiento", usuario: "ingeniero", correo: "ingeniero@incamat.local", rol: "Ingeniero", secret: "INCAMAT_INGENIERO_PASSWORD" },
-  { nombre: "Técnico de mantenimiento", usuario: "tecnico", correo: "tecnico@incamat.local", rol: "Técnico", secret: "INCAMAT_TECNICO_PASSWORD" },
-  { nombre: "Operario de planta", usuario: "operario", correo: "operario@incamat.local", rol: "Operario", secret: "INCAMAT_OPERARIO_PASSWORD" },
+  { nombre: "Administrador", usuario: "admin", correo: "admin@incamat.local", rol: "Administrador", secret: "INCAMAT_ADMIN_PASSWORD", legacySecret: "INCAMAT_ADMIN_PASS" },
+  { nombre: "Ingeniero de mantenimiento", usuario: "ingeniero", correo: "ingeniero@incamat.local", rol: "Ingeniero", secret: "INCAMAT_INGENIERO_PASSWORD", legacySecret: "INCAMAT_INGENIERO_PASS" },
+  { nombre: "Técnico de mantenimiento", usuario: "tecnico", correo: "tecnico@incamat.local", rol: "Técnico", secret: "INCAMAT_TECNICO_PASSWORD", legacySecret: "INCAMAT_TECNICO_PASS" },
+  { nombre: "Operario de planta", usuario: "operario", correo: "operario@incamat.local", rol: "Operario", secret: "INCAMAT_OPERARIO_PASSWORD", legacySecret: "INCAMAT_OPERARIO_PASS" },
 ];
 
 async function passwordHash(password, saltText) {
@@ -63,12 +63,12 @@ async function ensureSchema(db) {
 
 async function ensureDefaultUsers(db, env) {
   for (const item of DEFAULT_USERS) {
-    const password = env[item.secret];
+    // Las contraseñas viven únicamente en Secrets de Cloudflare y nunca en
+    // el código público. Se acepta el nombre anterior *_PASS por compatibilidad.
+    const password = String(env[item.secret] || env[item.legacySecret] || "");
     if (!password) continue;
     const hash = await passwordHash(password, `incamat-${item.usuario}-v1`);
-    // Estas cuatro cuentas son las cuentas iniciales de la organización.
-    // Se sincronizan con los secretos seguros de Cloudflare para que una
-    // contraseña antigua de una prueba no impida volver a ingresar.
+    // Estas cuentas se sincronizan con los secretos seguros de Cloudflare.
     await db.prepare(`INSERT INTO usuarios (nombre, usuario, correo, rol, password_hash, estado)
       VALUES (?, ?, ?, ?, ?, 1)
       ON CONFLICT(usuario) DO UPDATE SET
@@ -169,6 +169,22 @@ async function api(request, env, url) {
     return json(result.results || []);
   }
 
+  // Estos catálogos son opcionales en la interfaz. Devolver una colección
+  // vacía permite que el panel principal siga cargando aunque todavía no se
+  // hayan migrado las localizaciones o el historial de importaciones.
+  if ((path === "/importaciones" || path === "/localizaciones") && request.method === "GET") {
+    return json([]);
+  }
+
+  if (path === "/fallas" && request.method === "GET") {
+    const result = await db.prepare(`SELECT f.*,m.nombre AS maquina,a.nombre AS area
+      FROM fallas f
+      JOIN maquinas m ON m.id=f.id_maquina
+      JOIN areas a ON a.id=m.id_area
+      ORDER BY f.fecha_reporte DESC`).all();
+    return json(result.results || []);
+  }
+
   if (path === "/fallas" && request.method === "POST") {
     const form = await request.formData();
     const idMaquina = Number(form.get("id_maquina"));
@@ -208,7 +224,9 @@ async function api(request, env, url) {
     await ensureDefaultUsers(db, env);
     const identity = String(usuario || "").trim().toLowerCase();
     const account = await db.prepare("SELECT id,nombre,usuario,correo,rol,password_hash FROM usuarios WHERE (LOWER(usuario)=? OR LOWER(correo)=?) AND estado=1").bind(identity, identity).first();
-    if (!account || !(await verifyPassword(password || "", account.password_hash))) return json({ success: false, mensaje: "Usuario o contraseña incorrectos" }, { status: 401 });
+    const enteredPassword = String(password || "");
+    const storedPasswordIsValid = account && await verifyPassword(enteredPassword, account.password_hash);
+    if (!account || !storedPasswordIsValid) return json({ success: false, mensaje: "Usuario o contraseña incorrectos" }, { status: 401 });
     return json({ success: true, usuario: { id: account.id, nombre: account.nombre, usuario: account.usuario, correo: account.correo, rol: account.rol }, token: crypto.randomUUID() });
   }
 

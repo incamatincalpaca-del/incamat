@@ -3,7 +3,7 @@ import DashboardLayout from "../layouts/DashboardLayout";
 import PageHeader from "../components/PageHeader";
 import "../styles/usuarios.css";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
+const API = import.meta.env.VITE_API_URL || "/api";
 const roles = ["Operario", "Técnico", "Ingeniero", "Administrador"];
 const emptyForm = { nombre: "", usuario: "", correo: "", password: "", rol: "Operario" };
 const authHeaders = (json = false) => ({ ...(json ? { "Content-Type": "application/json" } : {}), Authorization: `Bearer ${localStorage.getItem("authToken") || ""}` });

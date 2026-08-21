@@ -36,10 +36,17 @@ function LoginForm() {
   const abrirReporte = useCallback((value) => {
     const raw = String(value || "").trim();
     if (!raw) {
-      setQrStatus("Escanea un cÃ³digo QR o pega el enlace de la mÃ¡quina.");
+      setQrStatus("Escanea un código QR o pega el enlace de la máquina.");
       return;
     }
-    const token = raw.includes("/reportar/") ? raw.split("/reportar/").pop().split(/[?#]/)[0] : raw;
+    let token = raw;
+    try {
+      const link = new URL(raw);
+      token = link.searchParams.get("token") || link.searchParams.get("qr") || link.pathname.split("/").filter(Boolean).pop() || raw;
+    } catch {
+      const match = raw.match(/(?:reportar|reporte-qr|por-qr)\/([^/?#]+)/i);
+      token = match ? match[1] : raw;
+    }
     cerrarEscaner();
     navigate(`/reportar/${encodeURIComponent(token)}`);
   }, [cerrarEscaner, navigate]);
@@ -48,7 +55,7 @@ function LoginForm() {
     if (!qrOpen) return undefined;
     let cancelled = false;
     const iniciarCamara = async () => {
-      setQrStatus("Solicitando permiso para usar la cÃ¡mara...");
+      setQrStatus("Solicitando permiso para usar la cámara...");
       await new Promise((resolve) => window.requestAnimationFrame(resolve));
       if (cancelled) return;
       const onScan = (decodedText) => {
@@ -61,13 +68,16 @@ function LoginForm() {
         const scanner = new Html5Qrcode("qr-camera-reader");
         scannerRef.current = scanner;
         await scanner.start({ facingMode: { exact: "environment" } }, { fps: 10, qrbox: { width: 220, height: 220 }, aspectRatio: 1.333 }, onScan, () => undefined);
-        if (!cancelled) setQrStatus("Apunta la cÃ¡mara al cÃ³digo QR de la mÃ¡quina.");
+        if (!cancelled) setQrStatus("Apunta la cámara al código QR de la máquina.");
       } catch {
         try {
-          await scannerRef.current?.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 220, height: 220 } }, onScan, () => undefined);
-          if (!cancelled) setQrStatus("Apunta la cÃ¡mara al cÃ³digo QR de la mÃ¡quina.");
+          try { await scannerRef.current?.clear(); } catch { /* scanner inicial no disponible */ }
+          const fallbackScanner = new Html5Qrcode("qr-camera-reader");
+          scannerRef.current = fallbackScanner;
+          await fallbackScanner.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 220, height: 220 } }, onScan, () => undefined);
+          if (!cancelled) setQrStatus("Apunta la cámara al código QR de la máquina.");
         } catch {
-          if (!cancelled) setQrStatus("No se pudo usar la cÃ¡mara. Autoriza el permiso de cÃ¡mara o pega el enlace QR.");
+          if (!cancelled) setQrStatus("No se pudo usar la cámara. Autoriza el permiso de cámara o pega el enlace QR.");
         }
       }
     };
@@ -79,13 +89,13 @@ function LoginForm() {
     const image = event.target.files?.[0];
     if (!image) return;
     try {
-      setQrStatus("Leyendo la imagen del cÃ³digo QR...");
+      setQrStatus("Leyendo la imagen del código QR...");
       const scanner = new Html5Qrcode("qr-camera-reader");
       const decodedText = await scanner.scanFile(image, true);
       await scanner.clear().catch(() => undefined);
       abrirReporte(decodedText);
     } catch {
-      setQrStatus("No se pudo leer ese archivo. Usa una foto clara del cÃ³digo QR.");
+      setQrStatus("No se pudo leer ese archivo. Usa una foto clara del código QR.");
     } finally {
       event.target.value = "";
     }
@@ -104,9 +114,9 @@ function LoginForm() {
         localStorage.setItem("authToken", datos.token);
         window.dispatchEvent(new Event("incamat:login"));
         navigate(datos.usuario.rol === "Operario" ? "/reportes-planta" : "/dashboard", { replace: true });
-      } else setLoginError(datos.mensaje || "Usuario, correo o contraseÃ±a incorrectos.");
+      } else setLoginError(datos.mensaje || "Usuario, correo o contraseña incorrectos.");
     } catch {
-      setLoginError("No se pudo conectar con el servidor. Verifica que INCAMAT estÃ© disponible.");
+      setLoginError("No se pudo conectar con el servidor. Verifica que INCAMAT esté disponible.");
     }
   };
 
@@ -116,14 +126,14 @@ function LoginForm() {
     <p className="subtitulo">SISTEMA INTELIGENTE DE MANTENIMIENTO</p><hr />
     <h2>Bienvenido de nuevo</h2><p className="texto">Ingresa tus credenciales para continuar</p>
     <input type="text" placeholder="Usuario o correo" value={usuario} onChange={(event) => setUsuario(event.target.value)} required autoComplete="username" />
-    <div className="password-box"><input type={mostrarPassword ? "text" : "password"} placeholder="ContraseÃ±a" value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="current-password" /><button type="button" className="mostrar" onClick={() => setMostrarPassword(!mostrarPassword)}>{mostrarPassword ? "Ocultar" : "Ver"}</button></div>
+    <div className="password-box"><input type={mostrarPassword ? "text" : "password"} placeholder="Contraseña" value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="current-password" /><button type="button" className="mostrar" onClick={() => setMostrarPassword(!mostrarPassword)}>{mostrarPassword ? "Ocultar" : "Ver"}</button></div>
     {loginError && <p className="login-error" role="alert">{loginError}</p>}
     <div className="opciones"><label><input type="checkbox" />Recordarme</label><span>Usa tu usuario o correo registrado</span></div>
-    <button type="submit" className="btn-login">INICIAR SESIÃ“N</button>
+    <button type="submit" className="btn-login">INICIAR SESIÓN</button>
     <div className="separador"><span>o</span></div>
-    <button type="button" className="btn-qr" onClick={() => setQrOpen(true)}>ESCANEAR CÃ“DIGO QR</button>
-    <p className="footer">Â© 2026 Incalpaca TPX. Todos los derechos reservados.</p>
-    {qrOpen && <div className="qr-login-backdrop" role="dialog" aria-modal="true"><section className="qr-login-dialog"><button className="qr-login-close" type="button" onClick={cerrarEscaner} aria-label="Cerrar">Ã—</button><p className="subtitulo">REPORTE DE PLANTA</p><h2>Escanear cÃ³digo QR</h2><p className="texto">{qrStatus}</p><div id="qr-camera-reader" className="qr-camera" /><div className="qr-image-option"><label>TambiÃ©n puedes elegir una foto del QR<input type="file" accept="image/png,image/jpeg,image/webp" onChange={leerImagenQr} /></label></div><div className="qr-manual"><input type="text" placeholder="O pega aquÃ­ el cÃ³digo o enlace QR" value={qrValue} onChange={(event) => setQrValue(event.target.value)} /><button type="button" className="btn-login" onClick={() => abrirReporte(qrValue)}>ABRIR REPORTE</button></div><small>Al detectar el cÃ³digo, se abrirÃ¡ la ficha de la mÃ¡quina para reportar la incidencia sin iniciar sesiÃ³n.</small></section></div>}
+    <button type="button" className="btn-qr" onClick={() => setQrOpen(true)}>ESCANEAR CÓDIGO QR</button>
+    <p className="footer">© 2026 Incalpaca TPX. Todos los derechos reservados.</p>
+    {qrOpen && <div className="qr-login-backdrop" role="dialog" aria-modal="true"><section className="qr-login-dialog"><button className="qr-login-close" type="button" onClick={cerrarEscaner} aria-label="Cerrar">×</button><p className="subtitulo">REPORTE DE PLANTA</p><h2>Escanear código QR</h2><p className="texto">{qrStatus}</p><div id="qr-camera-reader" className="qr-camera" /><div className="qr-image-option"><label>También puedes elegir una foto del QR<input type="file" accept="image/png,image/jpeg,image/webp" onChange={leerImagenQr} /></label></div><div className="qr-manual"><input type="text" placeholder="O pega aquí el código o enlace QR" value={qrValue} onChange={(event) => setQrValue(event.target.value)} /><button type="button" className="btn-login" onClick={() => abrirReporte(qrValue)}>ABRIR REPORTE</button></div><small>Al detectar el código, se abrirá la ficha de la máquina para reportar la incidencia sin iniciar sesión.</small></section></div>}
   </form>;
 }
 
