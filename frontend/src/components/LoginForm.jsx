@@ -124,7 +124,7 @@ function LoginForm() {
     <img src={logo} alt="INCAMAT" className="logo" />
     <h1 className="titulo">INCA<span>MAT</span></h1>
     <p className="subtitulo">SISTEMA INTELIGENTE DE MANTENIMIENTO</p><hr />
-    <h2>Bienvenido de nuevo</h2><p className="texto">Ingresa tus credenciales para continuar</p>
+    <h2>Bienvenido de nuevo</h2><p className="texto">Ingresa tus credenciales para continuar</p><p className="texto login-public-note">Versión pública segura · Usa tu usuario o correo registrado.</p>
     <input type="text" placeholder="Usuario o correo" value={usuario} onChange={(event) => setUsuario(event.target.value)} required autoComplete="username" />
     <div className="password-box"><input type={mostrarPassword ? "text" : "password"} placeholder="Contraseña" value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="current-password" /><button type="button" className="mostrar" onClick={() => setMostrarPassword(!mostrarPassword)}>{mostrarPassword ? "Ocultar" : "Ver"}</button></div>
     {loginError && <p className="login-error" role="alert">{loginError}</p>}

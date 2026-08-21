@@ -42,12 +42,21 @@ const requireDb = (env) => {
   return env.DB;
 };
 
-const withUtf8 = (response) => {
+const withUtf8 = (response, request) => {
   const headers = new Headers(response.headers);
-  const contentType = headers.get("content-type") || "";
-  if (/^(text\/|application\/(javascript|json))/.test(contentType) && !/charset=/i.test(contentType)) {
-    headers.set("content-type", `${contentType}; charset=utf-8`);
+  const pathname = new URL(request.url).pathname.toLowerCase();
+  const typeByExtension = pathname.endsWith(".js") ? "text/javascript"
+    : pathname.endsWith(".css") ? "text/css"
+      : pathname.endsWith(".json") ? "application/json"
+        : pathname.endsWith(".svg") ? "image/svg+xml"
+          : "text/html";
+  const contentType = headers.get("content-type") || typeByExtension;
+  // La declaración explícita evita que navegadores móviles muestren Ã±, Ã¡ o Ã­.
+  if (/^(text\/|application\/(javascript|json))/.test(contentType)) {
+    headers.set("content-type", `${contentType.replace(/;\s*charset=[^;]+/i, "")}; charset=utf-8`);
   }
+  // Evita que la pantalla de acceso previa quede almacenada después de publicar.
+  if (!pathname.startsWith("/assets/")) headers.set("cache-control", "no-store");
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 };
 
@@ -255,7 +264,7 @@ export default {
     const url = new URL(request.url);
     try {
       if (url.pathname === "/api" || url.pathname.startsWith("/api/")) return await api(request, env, url);
-      return withUtf8(await env.ASSETS.fetch(request));
+      return withUtf8(await env.ASSETS.fetch(request), request);
     } catch (error) {
       return json({ error: error.message || "No fue posible procesar la solicitud." }, { status: 500 });
     }
