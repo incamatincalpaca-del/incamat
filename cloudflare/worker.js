@@ -46,7 +46,9 @@ const HISTORIC_TYPES = ["correctivo", "preventivo", "rutinario", "limpieza", "pr
 const normalizeHistoricType = (value) => {
   const text = String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   if (text.includes("correct")) return "correctivo";
-  if (text.includes("prevent")) return "preventivo";
+  // El historial de Incalpaca registra preventivos tanto como
+  // "Preventivo" como "PREV GENERAL". Ambos pertenecen al mismo tipo.
+  if (text.includes("prevent") || text.includes("prev general")) return "preventivo";
   if (text.includes("rutin")) return "rutinario";
   if (text.includes("limp")) return "limpieza";
   if (text.includes("proyect")) return "proyecto";
