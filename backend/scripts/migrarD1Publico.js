@@ -9,6 +9,7 @@ const pool = require("../config/database");
 
 const baseUrl = (process.env.INCAMAT_PUBLIC_URL || "https://incamat.incamat-incalpaca.workers.dev").replace(/\/$/, "");
 const key = process.env.INCAMAT_MIGRATION_KEY;
+const onlyHistory = process.argv.includes("--solo-historial");
 const chunk = (rows, size = 100) => Array.from({ length: Math.ceil(rows.length / size) }, (_, index) => rows.slice(index * size, index * size + size));
 
 const send = async (collection, records) => {
@@ -29,6 +30,13 @@ const send = async (collection, records) => {
   let conn;
   try {
     conn = await pool.getConnection();
+    if (onlyHistory) {
+      const historial = await conn.query(`SELECT id_registro,id_maquina,codigo_maquina_origen,maquina_origen,fecha,tecnicos,tipo_original,ot,codigo_mantenimiento,duracion_original,detalles,repuestos_materiales,foto_evidencia,revisado,id_importacion,creado_en,actualizado_en
+        FROM historial_mantenimiento_excel ORDER BY id`);
+      await send("historial_mantenimiento_excel", historial);
+      console.log(JSON.stringify({ success: true, historial_mantenimiento_excel: historial.length }));
+      return;
+    }
     const [areas, maquinas, repuestos, relaciones, fallas, mantenimientos] = await Promise.all([
       conn.query("SELECT id,codigo,nombre,descripcion,responsable,estado FROM areas ORDER BY id"),
       conn.query("SELECT id,codigo,nombre,id_area,marca,modelo,descripcion_corta,estado,qr_token FROM maquinas ORDER BY id"),
@@ -38,9 +46,20 @@ const send = async (collection, records) => {
       conn.query("SELECT id,id_maquina,id_falla,tipo,modalidad,estado,fecha_programada,fecha_realizacion,responsable,descripcion,observacion,checklist FROM mantenimientos ORDER BY id")
     ]);
 
+    // D1 recibe datos simples; MariaDB entrega el checklist como arreglo u objeto.
+    const mantenimientosNormalizados = mantenimientos.map((mantenimiento) => ({
+      ...mantenimiento,
+      checklist:
+        mantenimiento.checklist == null
+          ? null
+          : typeof mantenimiento.checklist === "string"
+            ? mantenimiento.checklist
+            : JSON.stringify(mantenimiento.checklist)
+    }));
+
     // El orden conserva las relaciones y los códigos originales.
-    for (const [name, rows] of [["areas", areas], ["maquinas", maquinas], ["repuestos", repuestos], ["repuestos_areas", relaciones], ["fallas", fallas], ["mantenimientos", mantenimientos]]) await send(name, rows);
-    console.log(JSON.stringify({ success: true, areas: areas.length, maquinas: maquinas.length, repuestos: repuestos.length, relaciones: relaciones.length, fallas: fallas.length, mantenimientos: mantenimientos.length }));
+    for (const [name, rows] of [["areas", areas], ["maquinas", maquinas], ["repuestos", repuestos], ["repuestos_areas", relaciones], ["fallas", fallas], ["mantenimientos", mantenimientosNormalizados]]) await send(name, rows);
+    console.log(JSON.stringify({ success: true, areas: areas.length, maquinas: maquinas.length, repuestos: repuestos.length, relaciones: relaciones.length, fallas: fallas.length, mantenimientos: mantenimientosNormalizados.length }));
   } finally {
     conn?.release();
     await pool.end();

@@ -42,6 +42,20 @@ const requireDb = (env) => {
   return env.DB;
 };
 
+const HISTORIC_TYPES = ["correctivo", "preventivo", "rutinario", "limpieza", "proyecto", "mejora", "seguridad", "apoyo", "otros"];
+const normalizeHistoricType = (value) => {
+  const text = String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (text.includes("correct")) return "correctivo";
+  if (text.includes("prevent")) return "preventivo";
+  if (text.includes("rutin")) return "rutinario";
+  if (text.includes("limp")) return "limpieza";
+  if (text.includes("proyect")) return "proyecto";
+  if (text.includes("mejor")) return "mejora";
+  if (text.includes("segur")) return "seguridad";
+  if (text.includes("apoyo")) return "apoyo";
+  return "otros";
+};
+
 const withUtf8 = (response, request) => {
   const headers = new Headers(response.headers);
   const pathname = new URL(request.url).pathname.toLowerCase();
@@ -73,7 +87,8 @@ async function ensureSchema(db) {
       db.prepare("CREATE TABLE IF NOT EXISTS repuestos (id INTEGER PRIMARY KEY AUTOINCREMENT, codigo TEXT NOT NULL UNIQUE, descripcion TEXT NOT NULL, familia_tecnica TEXT, criticidad TEXT NOT NULL DEFAULT 'Sin evaluar', stock_actual REAL NOT NULL DEFAULT 0, stock_minimo REAL NOT NULL DEFAULT 0, stock_verificado INTEGER NOT NULL DEFAULT 0, unidad TEXT, ubicacion TEXT, costo_ultimo REAL, fecha_ultima_solicitud TEXT)"),
       db.prepare("CREATE TABLE IF NOT EXISTS repuestos_areas (id_repuesto INTEGER NOT NULL, id_area INTEGER NOT NULL, PRIMARY KEY(id_repuesto,id_area))"),
       db.prepare("CREATE TABLE IF NOT EXISTS fallas (id INTEGER PRIMARY KEY AUTOINCREMENT, id_maquina INTEGER NOT NULL, prioridad TEXT NOT NULL DEFAULT 'Media', descripcion TEXT NOT NULL, estado TEXT NOT NULL DEFAULT 'Reportada', fecha_reporte TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, fecha_resolucion TEXT)"),
-      db.prepare("CREATE TABLE IF NOT EXISTS mantenimientos (id INTEGER PRIMARY KEY AUTOINCREMENT, id_maquina INTEGER NOT NULL, id_falla INTEGER, tipo TEXT NOT NULL, modalidad TEXT, estado TEXT NOT NULL DEFAULT 'Programado', fecha_programada TEXT NOT NULL, fecha_realizacion TEXT, responsable TEXT, descripcion TEXT, observacion TEXT, checklist TEXT)")
+      db.prepare("CREATE TABLE IF NOT EXISTS mantenimientos (id INTEGER PRIMARY KEY AUTOINCREMENT, id_maquina INTEGER NOT NULL, id_falla INTEGER, tipo TEXT NOT NULL, modalidad TEXT, estado TEXT NOT NULL DEFAULT 'Programado', fecha_programada TEXT NOT NULL, fecha_realizacion TEXT, responsable TEXT, descripcion TEXT, observacion TEXT, checklist TEXT)"),
+      db.prepare("CREATE TABLE IF NOT EXISTS historial_mantenimiento_excel (id INTEGER PRIMARY KEY AUTOINCREMENT, id_registro TEXT NOT NULL UNIQUE, id_maquina INTEGER, codigo_maquina_origen TEXT, maquina_origen TEXT NOT NULL, fecha TEXT NOT NULL, tecnicos TEXT, tipo_original TEXT NOT NULL, ot TEXT, codigo_mantenimiento TEXT, duracion_original TEXT, detalles TEXT, repuestos_materiales TEXT, foto_evidencia TEXT, revisado TEXT, id_importacion INTEGER, creado_en TEXT DEFAULT CURRENT_TIMESTAMP, actualizado_en TEXT)")
     ]);
   }
   await schemaReady;
@@ -126,6 +141,12 @@ const migrationStatements = (db, collection, records) => {
     if (collection === "mantenimientos") statements.push(db.prepare(`INSERT OR REPLACE INTO mantenimientos
       (id,id_maquina,id_falla,tipo,modalidad,estado,fecha_programada,fecha_realizacion,responsable,descripcion,observacion,checklist) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
       row.id, row.id_maquina, row.id_falla, row.tipo, row.modalidad, row.estado, row.fecha_programada, row.fecha_realizacion, row.responsable, row.descripcion, row.observacion, row.checklist));
+    if (collection === "historial_mantenimiento_excel") statements.push(db.prepare(`INSERT INTO historial_mantenimiento_excel
+      (id_registro,id_maquina,codigo_maquina_origen,maquina_origen,fecha,tecnicos,tipo_original,ot,codigo_mantenimiento,duracion_original,detalles,repuestos_materiales,foto_evidencia,revisado,id_importacion,creado_en,actualizado_en)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(id_registro) DO UPDATE SET
+        id_maquina=excluded.id_maquina,codigo_maquina_origen=excluded.codigo_maquina_origen,maquina_origen=excluded.maquina_origen,fecha=excluded.fecha,tecnicos=excluded.tecnicos,tipo_original=excluded.tipo_original,ot=excluded.ot,codigo_mantenimiento=excluded.codigo_mantenimiento,duracion_original=excluded.duracion_original,detalles=excluded.detalles,repuestos_materiales=excluded.repuestos_materiales,foto_evidencia=excluded.foto_evidencia,revisado=excluded.revisado,id_importacion=excluded.id_importacion,actualizado_en=excluded.actualizado_en`).bind(
+      row.id_registro, row.id_maquina, row.codigo_maquina_origen, row.maquina_origen, row.fecha, row.tecnicos, row.tipo_original, row.ot, row.codigo_mantenimiento, row.duracion_original, row.detalles, row.repuestos_materiales, row.foto_evidencia, row.revisado, row.id_importacion, row.creado_en, row.actualizado_en));
   }
   return statements;
 };
@@ -140,7 +161,7 @@ async function api(request, env, url) {
   if (path === "/migracion-inicial" && request.method === "POST") {
     if (!migrationAllowed(request, env)) return json({ error: "No autorizado para la migración inicial." }, { status: 403 });
     const { collection, records } = await readBody(request);
-    const allowed = new Set(["areas", "maquinas", "repuestos", "repuestos_areas", "fallas", "mantenimientos"]);
+    const allowed = new Set(["areas", "maquinas", "repuestos", "repuestos_areas", "fallas", "mantenimientos", "historial_mantenimiento_excel"]);
     if (!allowed.has(collection) || !Array.isArray(records) || records.length === 0 || records.length > 100) {
       return json({ error: "Lote de migración no válido." }, { status: 400 });
     }
@@ -187,6 +208,21 @@ async function api(request, env, url) {
     return json(result.results || []);
   }
 
+  if (path === "/mantenimientos/historial-excel" && request.method === "GET") {
+    const requestedType = url.searchParams.get("tipo");
+    const result = await db.prepare(`SELECT h.id_registro,h.fecha,h.tecnicos,h.detalles,h.tipo_original,
+      COALESCE(m.nombre,h.maquina_origen) AS maquina,COALESCE(a.nombre,'Sin área asignada') AS area,
+      COALESCE(m.estado,'Histórico') AS estado_maquina
+      FROM historial_mantenimiento_excel h
+      LEFT JOIN maquinas m ON m.id=h.id_maquina
+      LEFT JOIN areas a ON a.id=m.id_area
+      ORDER BY h.fecha DESC,h.id DESC`).all();
+    const registros = (result.results || []).filter((row) => !requestedType || normalizeHistoricType(row.tipo_original) === normalizeHistoricType(requestedType));
+    const estados = {};
+    for (const row of registros) estados[row.estado_maquina] = (estados[row.estado_maquina] || 0) + 1;
+    return json({ total: registros.length, estados, registros: registros.slice(0, 100) });
+  }
+
   // Estos catálogos son opcionales en la interfaz. Devolver una colección
   // vacía permite que el panel principal siga cargando aunque todavía no se
   // hayan migrado las localizaciones o el historial de importaciones.
@@ -220,16 +256,23 @@ async function api(request, env, url) {
   }
 
   if (path === "/dashboard" && request.method === "GET") {
-    const [machines, spares, failures] = await db.batch([
+    const [machines, spares, failures, historic] = await db.batch([
       db.prepare("SELECT COUNT(*) AS total,SUM(estado='Operativa') AS operativas,SUM(estado IN ('Detenida','Mantenimiento')) AS paradas FROM maquinas"),
       db.prepare("SELECT COUNT(*) AS total,SUM(stock_verificado=0) AS sin_inventario,SUM(stock_verificado=1 AND stock_actual<=stock_minimo) AS bajo_minimo FROM repuestos"),
-      db.prepare("SELECT COUNT(*) AS abiertas FROM fallas WHERE estado <> 'Resuelta'")
+      db.prepare("SELECT COUNT(*) AS abiertas FROM fallas WHERE estado <> 'Resuelta'"),
+      db.prepare("SELECT tipo_original,COUNT(*) AS total FROM historial_mantenimiento_excel GROUP BY tipo_original")
     ]);
     const m = machines.results?.[0] || {}; const r = spares.results?.[0] || {}; const f = failures.results?.[0] || {};
+    const resumen_mantenimiento = Object.fromEntries(HISTORIC_TYPES.map((type) => [type, 0]));
+    for (const row of historic.results || []) {
+      const type = normalizeHistoricType(row.tipo_original);
+      resumen_mantenimiento[type] += Number(row.total || 0);
+    }
     return json({
       maquinas: { total: Number(m.total || 0), operativas: Number(m.operativas || 0), paradas: Number(m.paradas || 0) },
       repuestos: { total: Number(r.total || 0), sin_inventario: Number(r.sin_inventario || 0), bajo_minimo: Number(r.bajo_minimo || 0) },
       fallas_abiertas: Number(f.abiertas || 0),
+      resumen_mantenimiento,
       actualizado_en: new Date().toISOString()
     });
   }
